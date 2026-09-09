@@ -22,7 +22,7 @@ export default function AdminHome() {
     }
   }
 
-  useEffect(() => { void load(); }, []);
+  useEffect(() => { const timer = window.setTimeout(() => { void load(); }, 0); return () => window.clearTimeout(timer); }, []);
 
   async function toggleVerification(doctor: AdminDoctor) {
     setBusy(doctor.id);
