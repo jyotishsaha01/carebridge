@@ -15,7 +15,7 @@
   "devDependencies": {
     "prisma": "latest",
     "tsx": "latest",
-    "typescript": "latest"
+    "typescript": "5.9.2"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"
