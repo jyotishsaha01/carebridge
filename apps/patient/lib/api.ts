@@ -83,7 +83,7 @@ export function bookAppointment(doctorSlug: string, scheduledAt: string) {
 }
 
 export function signIn(email: string, password: string) {
-  return apiFetch<{ user: AuthUser }>("/v1/auth/login", {
+  return apiFetch<{ user: AuthUser; emailVerified?: boolean }>("/v1/auth/login", {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ email, password }),
@@ -91,15 +91,55 @@ export function signIn(email: string, password: string) {
 }
 
 export function signUp(email: string, password: string) {
-  return apiFetch<{ user: AuthUser }>("/v1/auth/signup", {
+  return apiFetch<{ user: AuthUser; emailVerificationRequired: boolean; devVerificationToken?: string }>("/v1/auth/signup", {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ email, password }),
   });
 }
 
+export function verifyEmail(token: string) {
+  return apiFetch<{ ok: true }>("/v1/auth/verify-email", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ token }),
+  });
+}
+
+export function resendVerification(email: string) {
+  return apiFetch<{ accepted: true; message: string; devVerificationToken?: string }>("/v1/auth/resend-verification", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ email }),
+  });
+}
+
+export function requestPasswordReset(email: string) {
+  return apiFetch<{ accepted: true; message: string; devResetToken?: string }>("/v1/auth/request-password-reset", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ email }),
+  });
+}
+
+export function resetPassword(token: string, password: string) {
+  return apiFetch<{ ok: true }>("/v1/auth/reset-password", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ token, password }),
+  });
+}
+
 export function getCurrentUser() {
-  return apiFetch<{ user: AuthUser }>("/v1/auth/me");
+  return apiFetch<{ user: AuthUser; emailVerified?: boolean }>("/v1/auth/me");
+}
+
+export function getSessions() {
+  return apiFetch<{ sessions: Array<{ id: string; createdAt: string; lastSeenAt: string; expiresAt: string; current: boolean }> }>("/v1/auth/sessions");
+}
+
+export function revokeSession(sessionId: string) {
+  return apiFetch<{ ok: true }>(`/v1/auth/sessions/${sessionId}/revoke`, { method: "POST" });
 }
 
 export function signOut() {

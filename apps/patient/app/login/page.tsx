@@ -19,8 +19,18 @@ export default function LoginPage() {
     setBusy(true);
     setMessage("");
     try {
-      const result = mode === "login" ? await signIn(email, password) : await signUp(email, password);
-      setMessage(`Welcome to CareBridge. Signed in as ${result.user.email}.`);
+      if (mode === "signup") {
+        const result = await signUp(email, password);
+        if (result.emailVerificationRequired) {
+          const suffix = result.devVerificationToken ? ` Development verification token: ${result.devVerificationToken}` : " Check your email for the verification link.";
+          setMessage(`Account created.${suffix}`);
+          return;
+        }
+        setMessage(`Welcome to CareBridge. Signed in as ${result.user.email}.`);
+      } else {
+        const result = await signIn(email, password);
+        setMessage(`Welcome to CareBridge. Signed in as ${result.user.email}.`);
+      }
       window.setTimeout(() => router.push("/dashboard"), 500);
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Unable to continue. Please try again.");
@@ -49,9 +59,10 @@ export default function LoginPage() {
           <label>Password<input type="password" value={password} onChange={(event) => setPassword(event.target.value)} placeholder="At least 12 characters" minLength={12} maxLength={128} autoComplete={mode === "login" ? "current-password" : "new-password"} required /></label>
           <button className="button primary full" disabled={busy} type="submit">{busy ? "Securing your session…" : mode === "login" ? "Sign in securely" : "Create secure account"}</button>
         </form>
+        {mode === "login" && <div style={{ marginTop: 12, display: "flex", gap: 14, flexWrap: "wrap" }}><Link className="microcopy" href="/forgot-password">Forgot password?</Link><Link className="microcopy" href="/verify-email">Verify email</Link></div>}
         {message && <div className={styles.message} role="status">{message}</div>}
-        <div className={styles.trust}><span>🔒 Encrypted session</span><span>✓ Patient account</span><span>✓ No plain-text password storage</span></div>
-        <p className="microcopy">Development environment: authentication is connected to the local CareBridge API. Production identity verification, recovery and regulatory controls will be added before launch.</p>
+        <div className={styles.trust}><span>🔒 Encrypted session</span><span>✓ Patient account</span><span>✓ Security events audited</span></div>
+        <p className="microcopy">Development environment: authentication is connected to the local CareBridge API. Production identity verification, recovery, abuse protection and regulatory controls remain release gates.</p>
       </section>
     </main>
   );
