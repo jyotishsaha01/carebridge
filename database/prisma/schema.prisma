@@ -45,14 +45,31 @@ enum FollowUpStatus {
 }
 
 model User {
-  id        String   @id @default(cuid())
-  email     String   @unique
-  role      UserRole
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id           String    @id @default(cuid())
+  email        String    @unique
+  passwordHash String?
+  role         UserRole
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
 
-  patient Patient?
-  doctor  Doctor?
+  patient  Patient?
+  doctor   Doctor?
+  sessions Session[]
+}
+
+model Session {
+  id         String    @id @default(cuid())
+  userId     String
+  tokenHash  String    @unique
+  expiresAt  DateTime
+  createdAt  DateTime  @default(now())
+  lastSeenAt DateTime  @default(now())
+  revokedAt  DateTime?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, expiresAt])
+  @@index([expiresAt, revokedAt])
 }
 
 model Patient {
@@ -142,33 +159,33 @@ model Appointment {
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
-  patient        Patient          @relation(fields: [patientId], references: [id])
-  doctor         Doctor           @relation(fields: [doctorId], references: [id])
-  medicalIntake  MedicalIntake?
+  patient       Patient          @relation(fields: [patientId], references: [id])
+  doctor        Doctor           @relation(fields: [doctorId], references: [id])
+  medicalIntake MedicalIntake?
   documents     MedicalDocument[]
-  consultation   Consultation?
+  consultation  Consultation?
 
   @@unique([doctorId, scheduledAt])
   @@index([patientId, scheduledAt])
 }
 
 model MedicalIntake {
-  id                String       @id @default(cuid())
-  appointmentId     String       @unique
-  patientId         String
-  reasonForVisit    String?
-  symptoms          String?
-  allergies         String?
-  medications       String?
-  medicalHistory    String?
-  surgeries         String?
-  familyHistory     String?
-  consentToConsult  Boolean      @default(false)
-  consentedAt       DateTime?
-  status            IntakeStatus @default(DRAFT)
-  completedAt       DateTime?
-  createdAt         DateTime      @default(now())
-  updatedAt         DateTime      @updatedAt
+  id               String       @id @default(cuid())
+  appointmentId    String       @unique
+  patientId        String
+  reasonForVisit   String?
+  symptoms         String?
+  allergies        String?
+  medications      String?
+  medicalHistory   String?
+  surgeries        String?
+  familyHistory    String?
+  consentToConsult Boolean      @default(false)
+  consentedAt      DateTime?
+  status           IntakeStatus @default(DRAFT)
+  completedAt      DateTime?
+  createdAt        DateTime      @default(now())
+  updatedAt        DateTime      @updatedAt
 
   appointment Appointment @relation(fields: [appointmentId], references: [id], onDelete: Cascade)
   patient     Patient     @relation(fields: [patientId], references: [id], onDelete: Cascade)

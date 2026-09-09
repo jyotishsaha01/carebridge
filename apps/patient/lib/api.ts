@@ -21,10 +21,22 @@ export type ApiSlot = {
   timezone: string;
 };
 
+export type AuthUser = {
+  id: string;
+  email: string;
+  role: "PATIENT" | "DOCTOR" | "ADMIN";
+  patientId?: string | null;
+  doctorId?: string | null;
+};
+
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
 
 async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(`${API_URL}${path}`, { ...init, cache: "no-store" });
+  const response = await fetch(`${API_URL}${path}`, {
+    ...init,
+    cache: "no-store",
+    credentials: "include",
+  });
   if (!response.ok) {
     const body = await response.json().catch(() => null) as { error?: string } | null;
     throw new Error(body?.error ?? `CareBridge API request failed: ${response.status}`);
@@ -68,4 +80,28 @@ export function bookAppointment(doctorSlug: string, scheduledAt: string) {
     },
     body: JSON.stringify({ doctorSlug, scheduledAt, durationMin: 30 }),
   });
+}
+
+export function signIn(email: string, password: string) {
+  return apiFetch<{ user: AuthUser }>("/v1/auth/login", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ email, password }),
+  });
+}
+
+export function signUp(email: string, password: string) {
+  return apiFetch<{ user: AuthUser }>("/v1/auth/signup", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ email, password }),
+  });
+}
+
+export function getCurrentUser() {
+  return apiFetch<{ user: AuthUser }>("/v1/auth/me");
+}
+
+export function signOut() {
+  return apiFetch<{ ok: true }>("/v1/auth/logout", { method: "POST" });
 }
