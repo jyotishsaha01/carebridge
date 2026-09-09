@@ -3,9 +3,12 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import type { UserRole } from "@prisma/client";
 import { z } from "zod";
 import { prisma } from "./server";
+import { recordAudit } from "./audit";
 
 const SESSION_COOKIE = "carebridge_session";
 const SESSION_DAYS = 30;
+const EMAIL_TOKEN_HOURS = 24;
+const RESET_TOKEN_MINUTES = 30;
 
 type Role = "PATIENT" | "DOCTOR" | "ADMIN";
 
@@ -26,9 +29,7 @@ function verifyPassword(password: string, encoded: string) {
   try {
     const expected = Buffer.from(hashText, "base64url");
     const actual = scryptSync(password, Buffer.from(saltText, "base64url"), expected.length, {
-      N: Number(n),
-      r: Number(r),
-      p: Number(p),
+      N: Number(n), r: Number(r), p: Number(p),
     });
     return actual.length === expected.length && timingSafeEqual(actual, expected);
   } catch {
@@ -56,7 +57,13 @@ function setSessionCookie(reply: FastifyReply, token: string) {
 }
 
 function clearSessionCookie(reply: FastifyReply) {
-  reply.header("Set-Cookie", `${SESSION_COOKIE}=; Path=/; Max-Age=0; HttpOnly; SameSite=Lax`);
+  const secure = process.env.NODE_ENV === "production" ? "; Secure" : "";
+  reply.header("Set-Cookie", `${SESSION_COOKIE}=; Path=/; Max-Age=0; HttpOnly; SameSite=Lax${secure}`);
+}
+
+function createOneTimeToken() {
+  const token = randomBytes(32).toString("base64url");
+  return { token, tokenHash: hashToken(token) };
 }
 
 async function createSession(userId: string) {
@@ -64,6 +71,28 @@ async function createSession(userId: string) {
   const expiresAt = new Date(Date.now() + SESSION_DAYS * 86400 * 1000);
   await prisma.session.create({ data: { userId, tokenHash: hashToken(token), expiresAt } });
   return token;
+}
+
+async function issueEmailVerification(userId: string) {
+  const { token, tokenHash } = createOneTimeToken();
+  await prisma.emailVerificationToken.deleteMany({ where: { userId, usedAt: null } });
+  await prisma.emailVerificationToken.create({
+    data: { userId, tokenHash, expiresAt: new Date(Date.now() + EMAIL_TOKEN_HOURS * 60 * 60 * 1000) },
+  });
+  return token;
+}
+
+async function issuePasswordReset(userId: string) {
+  const { token, tokenHash } = createOneTimeToken();
+  await prisma.passwordResetToken.deleteMany({ where: { userId, usedAt: null } });
+  await prisma.passwordResetToken.create({
+    data: { userId, tokenHash, expiresAt: new Date(Date.now() + RESET_TOKEN_MINUTES * 60 * 1000) },
+  });
+  return token;
+}
+
+function auditUserId(user: { id: string } | null | undefined) {
+  return user?.id ?? null;
 }
 
 export async function getAuthenticatedUser(request: FastifyRequest) {
@@ -100,41 +129,113 @@ export async function registerAuthRoutes(app: FastifyInstance) {
     if (existing) return reply.code(409).send({ error: "An account with this email already exists" });
 
     const user = await prisma.user.create({
-      data: {
-        email: input.email,
-        passwordHash: hashPassword(input.password),
-        role: "PATIENT",
-        patient: { create: { country: "US" } },
-      },
+      data: { email: input.email, passwordHash: hashPassword(input.password), role: "PATIENT", patient: { create: { country: "US" } } },
       include: { patient: true },
     });
+    const verificationToken = await issueEmailVerification(user.id);
+    const sessionToken = await createSession(user.id);
+    setSessionCookie(reply, sessionToken);
 
-    const token = await createSession(user.id);
-    setSessionCookie(reply, token);
-    return reply.code(201).send({ user: { id: user.id, email: user.email, role: user.role, patientId: user.patient?.id ?? null } });
+    await recordAudit(request, { actorUserId: user.id, action: "AUTH_SIGNUP", resourceType: "User", resourceId: user.id, outcome: "SUCCESS" });
+    const response: Record<string, unknown> = { user: { id: user.id, email: user.email, role: user.role, patientId: user.patient?.id ?? null }, emailVerificationRequired: true };
+    if (process.env.NODE_ENV !== "production" && process.env.ALLOW_DEMO_AUTH === "true") response.devVerificationToken = verificationToken;
+    return reply.code(201).send(response);
   });
 
   app.post("/v1/auth/login", async (request, reply) => {
     const input = credentialsSchema.parse(request.body);
     const user = await prisma.user.findUnique({ where: { email: input.email }, include: { patient: true, doctor: true } });
     if (!user?.passwordHash || !verifyPassword(input.password, user.passwordHash)) {
+      await recordAudit(request, { action: "AUTH_LOGIN", resourceType: "User", outcome: "FAILURE", metadata: { reason: "invalid_credentials" } });
       return reply.code(401).send({ error: "Invalid email or password" });
+    }
+
+    const requireVerification = process.env.NODE_ENV === "production" || process.env.REQUIRE_EMAIL_VERIFICATION === "true";
+    if (requireVerification && !user.emailVerifiedAt) {
+      await recordAudit(request, { actorUserId: user.id, action: "AUTH_LOGIN", resourceType: "User", resourceId: user.id, outcome: "FAILURE", metadata: { reason: "email_not_verified" } });
+      return reply.code(403).send({ error: "Email verification required" });
     }
 
     const token = await createSession(user.id);
     setSessionCookie(reply, token);
-    return { user: { id: user.id, email: user.email, role: user.role, patientId: user.patient?.id ?? null, doctorId: user.doctor?.id ?? null } };
+    await recordAudit(request, { actorUserId: user.id, action: "AUTH_LOGIN", resourceType: "User", resourceId: user.id, outcome: "SUCCESS" });
+    return { user: { id: user.id, email: user.email, role: user.role, patientId: user.patient?.id ?? null, doctorId: user.doctor?.id ?? null }, emailVerified: Boolean(user.emailVerifiedAt) };
+  });
+
+  app.post("/v1/auth/verify-email", async (request, reply) => {
+    const { token } = z.object({ token: z.string().min(20).max(200) }).parse(request.body);
+    const record = await prisma.emailVerificationToken.findUnique({ where: { tokenHash: hashToken(token) }, include: { user: true } });
+    if (!record || record.usedAt || record.expiresAt <= new Date()) return reply.code(400).send({ error: "Invalid or expired verification token" });
+    await prisma.$transaction([
+      prisma.user.update({ where: { id: record.userId }, data: { emailVerifiedAt: new Date() } }),
+      prisma.emailVerificationToken.update({ where: { id: record.id }, data: { usedAt: new Date() } }),
+    ]);
+    await recordAudit(request, { actorUserId: record.userId, action: "AUTH_EMAIL_VERIFIED", resourceType: "User", resourceId: record.userId, outcome: "SUCCESS" });
+    return { ok: true };
+  });
+
+  app.post("/v1/auth/request-password-reset", async (request, reply) => {
+    const { email } = z.object({ email: z.string().trim().toLowerCase().email() }).parse(request.body);
+    const user = await prisma.user.findUnique({ where: { email } });
+    let devResetToken: string | undefined;
+    if (user) {
+      devResetToken = await issuePasswordReset(user.id);
+      await recordAudit(request, { actorUserId: user.id, action: "AUTH_PASSWORD_RESET_REQUEST", resourceType: "User", resourceId: user.id, outcome: "SUCCESS" });
+    } else {
+      await recordAudit(request, { action: "AUTH_PASSWORD_RESET_REQUEST", resourceType: "User", outcome: "SUCCESS", metadata: { reason: "unknown_email" } });
+    }
+
+    const response: Record<string, unknown> = { accepted: true, message: "If an account exists, reset instructions will be sent." };
+    if (process.env.NODE_ENV !== "production" && process.env.ALLOW_DEMO_AUTH === "true" && devResetToken) response.devResetToken = devResetToken;
+    return reply.code(202).send(response);
+  });
+
+  app.post("/v1/auth/reset-password", async (request, reply) => {
+    const input = z.object({ token: z.string().min(20).max(200), password: z.string().min(12).max(128) }).parse(request.body);
+    const record = await prisma.passwordResetToken.findUnique({ where: { tokenHash: hashToken(input.token) } });
+    if (!record || record.usedAt || record.expiresAt <= new Date()) return reply.code(400).send({ error: "Invalid or expired reset token" });
+
+    const passwordHash = hashPassword(input.password);
+    const now = new Date();
+    await prisma.$transaction([
+      prisma.user.update({ where: { id: record.userId }, data: { passwordHash } }),
+      prisma.passwordResetToken.update({ where: { id: record.id }, data: { usedAt: now } }),
+      prisma.session.updateMany({ where: { userId: record.userId, revokedAt: null }, data: { revokedAt: now } }),
+    ]);
+    await recordAudit(request, { actorUserId: record.userId, action: "AUTH_PASSWORD_RESET", resourceType: "User", resourceId: record.userId, outcome: "SUCCESS" });
+    clearSessionCookie(reply);
+    return { ok: true };
+  });
+
+  app.get("/v1/auth/sessions", async (request, reply) => {
+    const user = await getAuthenticatedUser(request);
+    if (!user) return reply.code(401).send({ error: "Authentication required" });
+    const currentTokenHash = parseCookies(request.headers.cookie).get(SESSION_COOKIE);
+    const sessions = await prisma.session.findMany({ where: { userId: user.id, revokedAt: null, expiresAt: { gt: new Date() } }, orderBy: { lastSeenAt: "desc" }, select: { id: true, createdAt: true, lastSeenAt: true, expiresAt: true, tokenHash: true } });
+    return { sessions: sessions.map(({ tokenHash, ...session }) => ({ ...session, current: tokenHash === (currentTokenHash ? hashToken(currentTokenHash) : "") })) };
+  });
+
+  app.post("/v1/auth/sessions/:sessionId/revoke", async (request, reply) => {
+    const user = await getAuthenticatedUser(request);
+    if (!user) return reply.code(401).send({ error: "Authentication required" });
+    const { sessionId } = z.object({ sessionId: z.string().min(1) }).parse(request.params);
+    const result = await prisma.session.updateMany({ where: { id: sessionId, userId: user.id, revokedAt: null }, data: { revokedAt: new Date() } });
+    if (result.count === 0) return reply.code(404).send({ error: "Session not found" });
+    await recordAudit(request, { actorUserId: user.id, action: "AUTH_SESSION_REVOKED", resourceType: "Session", resourceId: sessionId, outcome: "SUCCESS" });
+    return { ok: true };
   });
 
   app.get("/v1/auth/me", async (request, reply) => {
     const user = await getAuthenticatedUser(request);
     if (!user) return reply.code(401).send({ error: "Authentication required" });
-    return { user: { id: user.id, email: user.email, role: user.role, patientId: user.patient?.id ?? null, doctorId: user.doctor?.id ?? null } };
+    return { user: { id: user.id, email: user.email, role: user.role, patientId: user.patient?.id ?? null, doctorId: user.doctor?.id ?? null }, emailVerified: Boolean(user.emailVerifiedAt) };
   });
 
   app.post("/v1/auth/logout", async (request, reply) => {
     const token = parseCookies(request.headers.cookie).get(SESSION_COOKIE);
+    const user = await getAuthenticatedUser(request);
     if (token) await prisma.session.updateMany({ where: { tokenHash: hashToken(token), revokedAt: null }, data: { revokedAt: new Date() } });
+    if (user) await recordAudit(request, { actorUserId: user.id, action: "AUTH_LOGOUT", resourceType: "User", resourceId: user.id, outcome: "SUCCESS" });
     clearSessionCookie(reply);
     return { ok: true };
   });
