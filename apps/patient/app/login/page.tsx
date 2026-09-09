@@ -1,10 +1,13 @@
 "use client";
 
+import Link from "next/link";
 import { FormEvent, useState } from "react";
+import { useRouter } from "next/navigation";
 import styles from "./login.module.css";
 import { signIn, signUp } from "../../lib/api";
 
 export default function LoginPage() {
+  const router = useRouter();
   const [mode, setMode] = useState<"login" | "signup">("login");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -18,7 +21,7 @@ export default function LoginPage() {
     try {
       const result = mode === "login" ? await signIn(email, password) : await signUp(email, password);
       setMessage(`Welcome to CareBridge. Signed in as ${result.user.email}.`);
-      setTimeout(() => { window.location.href = "/"; }, 500);
+      window.setTimeout(() => router.push("/"), 500);
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Unable to continue. Please try again.");
     } finally {
@@ -31,7 +34,7 @@ export default function LoginPage() {
       <div className={`${styles.orbit} ${styles.orbitOne}`} />
       <div className={`${styles.orbit} ${styles.orbitTwo}`} />
       <section className={styles.card}>
-        <a className="brand" href="/" aria-label="CareBridge home"><span className="brand-mark">C</span><span>CareBridge</span></a>
+        <Link className="brand" href="/" aria-label="CareBridge home"><span className="brand-mark">C</span><span>CareBridge</span></Link>
         <div className={styles.copy}>
           <div className="eyebrow">YOUR CARE, ONE PLACE</div>
           <h1>{mode === "login" ? "Welcome back." : "Start your care journey."}</h1>
