@@ -1,0 +1,47 @@
+name: CareBridge CI
+
+on:
+  pull_request:
+  push:
+    branches: [main, develop, test, qa]
+
+jobs:
+  foundation-check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.15.0
+          run_install: false
+      - name: Install dependencies
+        run: pnpm install --no-frozen-lockfile
+      - name: Lint
+        run: pnpm lint
+      - name: Typecheck
+        run: pnpm typecheck
+      - name: Unit tests
+        run: pnpm test
+      - name: Build
+        run: pnpm build
+
+  qa-smoke:
+    needs: foundation-check
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/qa' || github.base_ref == 'qa'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: QA environment guard
+        run: |
+          test -f .env.test.example
+          test -f docs/project/TESTING_ENVIRONMENT.md
+          test -f docs/testing/TEST-PLAN.md
+          echo "QA configuration files present; real patient data is prohibited."
