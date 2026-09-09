@@ -10,7 +10,8 @@
 | Test / QA environment foundation | DONE | `test` and `qa` branches plus test configuration |
 | v0.3 Patient Discovery | DONE | Patient discovery UI now consumes the local API |
 | v0.4 API + PostgreSQL foundation | DONE | Fastify, Prisma, PostgreSQL, seed data and discovery endpoints |
-| v0.5 Availability + demo booking | IN PROGRESS | Seeded slots, slot API and local reservation flow |
+| v0.5 Availability + demo booking | DONE | Seeded slots, slot API and local reservation flow |
+| v0.6 Medical intake foundation | IN PROGRESS | Consent-aware intake API and medical-document metadata model |
 | Authentication / RBAC | FOUNDATION | Role model + server-side guard; production identity provider still required |
 
 ## Current acceptance criteria
@@ -27,9 +28,12 @@
 - [x] Local demo appointment reservation
 - [x] User roles for Patient / Doctor / Admin
 - [x] Reusable API RBAC guard foundation
+- [x] Medical intake schema with consent state
+- [x] Medical intake GET/PUT API
+- [x] Medical document metadata model
 - [ ] Production authentication / session validation
 - [ ] Production appointment/payment workflow
-- [ ] Medical intake and document upload
+- [ ] Secure binary document storage/upload
 - [ ] Video consultation
 - [ ] Doctor workspace
 - [ ] Admin workspace
@@ -40,6 +44,6 @@ Development/test/QA environments use synthetic data only. No real patient health
 
 ## Next milestone
 
-**v0.6 — Booking + identity foundation**
+**v0.7 — Clinical workflow foundation**
 
-Production-ready identity integration → patient session → availability timezone handling → booking confirmation state → payment-provider integration design → notification events.
+Secure document storage → consultation record → doctor assessment/notes → prescription model → consultation summary → follow-up events.
