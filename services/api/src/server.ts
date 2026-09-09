@@ -2,6 +2,7 @@ import Fastify from "fastify";
 import cors from "@fastify/cors";
 import { PrismaClient } from "@prisma/client";
 import { z } from "zod";
+import { registerAuthRoutes } from "./auth";
 import { registerBookingRoutes } from "./booking";
 import { registerMedicalIntakeRoutes } from "./medicalIntake";
 import { registerClinicalRoutes } from "./clinical";
@@ -37,7 +38,7 @@ function serializeDoctor(doctor: any) {
 
 export async function buildApp() {
   const app = Fastify({ logger: true });
-  await app.register(cors, { origin: env.CORS_ORIGIN });
+  await app.register(cors, { origin: env.CORS_ORIGIN, credentials: true });
 
   app.get("/health", async () => ({ status: "ok", service: "carebridge-api" }));
 
@@ -89,6 +90,7 @@ export async function buildApp() {
     };
   });
 
+  await registerAuthRoutes(app);
   await registerBookingRoutes(app, env.ALLOW_DEMO_AUTH);
   await registerMedicalIntakeRoutes(app, env.ALLOW_DEMO_AUTH);
   await registerClinicalRoutes(app, env.ALLOW_DEMO_AUTH);
