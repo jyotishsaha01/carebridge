@@ -8,6 +8,7 @@ import { registerMedicalIntakeRoutes } from "./medicalIntake";
 import { registerClinicalRoutes } from "./clinical";
 import { registerDocumentRoutes } from "./documents";
 import { registerPatientDashboardRoutes } from "./patientDashboard";
+import { registerVideoRoutes } from "./video";
 
 const env = z.object({
   PORT: z.coerce.number().int().positive().default(4000),
@@ -44,17 +45,7 @@ export async function buildApp() {
   app.get("/v1/specialties", async () => prisma.specialty.findMany({ orderBy: { name: "asc" } }));
   app.get("/v1/doctors", async (request) => {
     const query = z.object({ specialty: z.string().optional(), q: z.string().trim().min(1).optional(), limit: z.coerce.number().int().min(1).max(50).default(20) }).parse(request.query);
-    const doctors = await prisma.doctor.findMany({
-      where: {
-        isVerified: true,
-        isActive: true,
-        specialty: query.specialty ? { name: query.specialty } : undefined,
-        ...(query.q ? { OR: [{ name: { contains: query.q, mode: "insensitive" } }, { bio: { contains: query.q, mode: "insensitive" } }, { specialty: { name: { contains: query.q, mode: "insensitive" } } }] } : {}),
-      },
-      include: { specialty: true, costComparison: true },
-      orderBy: [{ rating: "desc" }, { experienceYears: "desc" }],
-      take: query.limit,
-    });
+    const doctors = await prisma.doctor.findMany({ where: { isVerified: true, isActive: true, specialty: query.specialty ? { name: query.specialty } : undefined, ...(query.q ? { OR: [{ name: { contains: query.q, mode: "insensitive" } }, { bio: { contains: query.q, mode: "insensitive" } }, { specialty: { name: { contains: query.q, mode: "insensitive" } } }] } : {}) }, include: { specialty: true, costComparison: true }, orderBy: [{ rating: "desc" }, { experienceYears: "desc" }], take: query.limit });
     return doctors.map(serializeDoctor);
   });
   app.get("/v1/doctors/:slug", async (request, reply) => {
@@ -69,6 +60,7 @@ export async function buildApp() {
   await registerClinicalRoutes(app, env.ALLOW_DEMO_AUTH);
   await registerDocumentRoutes(app, env.ALLOW_DEMO_AUTH);
   await registerPatientDashboardRoutes(app);
+  await registerVideoRoutes(app);
   app.addHook("onClose", async () => prisma.$disconnect());
   return app;
 }
