@@ -61,19 +61,23 @@ const doctors = [
   },
 ];
 
+function addDays(base: Date, days: number, hours: number, minutes = 0) {
+  const date = new Date(base);
+  date.setUTCDate(date.getUTCDate() + days);
+  date.setUTCHours(hours, minutes, 0, 0);
+  return date;
+}
+
 async function main() {
   const specialtyNames = [...new Set(doctors.map((doctor) => doctor.specialty))];
   const specialtyMap = new Map<string, string>();
 
   for (const name of specialtyNames) {
-    const specialty = await prisma.specialty.upsert({
-      where: { name },
-      update: {},
-      create: { name },
-    });
+    const specialty = await prisma.specialty.upsert({ where: { name }, update: {}, create: { name } });
     specialtyMap.set(name, specialty.id);
   }
 
+  let slotCount = 0;
   for (const doctor of doctors) {
     const email = `${doctor.slug}@demo.carebridge.local`;
     const user = await prisma.user.upsert({
@@ -134,9 +138,34 @@ async function main() {
         disclaimer: "Illustrative comparison only. Actual US prices vary by provider, location, insurance, visit type and complexity.",
       },
     });
+
+    for (let day = 1; day <= 14; day += 1) {
+      for (const hour of [9, 11, 14, 16]) {
+        const startsAt = addDays(new Date(), day, hour);
+        const endsAt = new Date(startsAt.getTime() + 30 * 60 * 1000);
+        await prisma.availabilitySlot.upsert({
+          where: { doctorId_startsAt: { doctorId: savedDoctor.id, startsAt } },
+          update: { endsAt, status: "AVAILABLE" },
+          create: { doctorId: savedDoctor.id, startsAt, endsAt, status: "AVAILABLE" },
+        });
+        slotCount += 1;
+      }
+    }
   }
 
-  console.log(`Seeded ${doctors.length} demo doctors.`);
+  const patientEmail = "demo-patient@demo.carebridge.local";
+  const patientUser = await prisma.user.upsert({
+    where: { email: patientEmail },
+    update: { role: "PATIENT" },
+    create: { email: patientEmail, role: "PATIENT" },
+  });
+  await prisma.patient.upsert({
+    where: { userId: patientUser.id },
+    update: { firstName: "Demo", lastName: "Patient", country: "US" },
+    create: { userId: patientUser.id, firstName: "Demo", lastName: "Patient", country: "US" },
+  });
+
+  console.log(`Seeded ${doctors.length} demo doctors and ${slotCount} availability slots.`);
 }
 
 main().catch((error) => {
