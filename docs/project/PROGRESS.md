@@ -17,12 +17,13 @@
 | v1.0 Patient dashboard | DONE | Authenticated dashboard experience |
 | v1.1 Patient dashboard data | DONE | Patient-scoped appointment/clinical data APIs |
 | v1.2–v1.3 Video | FOUNDATION | Provider-neutral video/session boundary; live provider onboarding pending |
-| v1.4 Payments | FOUNDATION | Provider-neutral payment architecture; live provider onboarding pending |
+| v1.4 Payments | FOUNDATION | Original provider-neutral payment architecture |
 | v1.5 Doctor platform | FOUNDATION | Doctor operations and clinical workspace foundation |
 | v1.6 Admin platform | FOUNDATION | Admin operations, verification and audit operations |
 | v1.7 Care journey | FOUNDATION | Optional treatment coordination roadmap layer |
 | v2.0 Production readiness | FOUNDATION | Security, secrets, encryption, monitoring, recovery and compliance gates |
-| v2.1 Account security + Admin UI | IN PROGRESS | Email verification/recovery, audit trail, session controls and usable Admin console |
+| v2.1 Account security + Admin UI | IMPLEMENTED | Email verification/recovery, audit trail, session controls and usable Admin console; final CI/release validation pending |
+| v2.2 Payments + Webhooks | IN PROGRESS | Provider-neutral payment intent, webhook signature boundary, lifecycle and idempotency foundation |
 
 ## Current acceptance criteria
 
@@ -46,9 +47,14 @@
 - [x] Session listing/revocation
 - [x] Sensitive authentication audit events
 - [x] Admin metrics, doctor verification and audit-log UI/API foundation
+- [x] Payment intent contract with idempotency key
+- [x] Payment lifecycle states
+- [x] Webhook signature verification boundary
+- [x] Duplicate webhook event protection in local/test processor
+- [ ] Persist payment intents and processed webhook IDs in PostgreSQL
+- [ ] Production payment provider and webhook reconciliation
 - [ ] Production email provider and email-delivery verification
 - [ ] Production identity provider / MFA policy
-- [ ] Live payment provider and webhook reconciliation
 - [ ] HIPAA/privacy/legal review and signed vendor agreements where required
 - [ ] Production encrypted object storage and access-control validation
 - [ ] Production video provider provisioning and security review
@@ -61,6 +67,6 @@ Development, test and QA environments use synthetic data only. No real patient h
 
 ## Next milestone
 
-**v2.1 — Account security + Admin operations hardening**
+**v2.2 — Payments + Webhooks**
 
-Finish production email-provider integration, enforce verification/MFA policy in production, complete admin operational controls, then move into payment/video/vendor integration and formal security/privacy release gates.
+Persist payment state and webhook idempotency in PostgreSQL, add provider-specific signature verification behind a server-side adapter, build the Patient checkout/status UI, then move into production video/payment vendor provisioning and formal security/privacy release gates.
