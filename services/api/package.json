@@ -13,13 +13,13 @@
   },
   "dependencies": {
     "@fastify/cors": "latest",
-    "@prisma/client": "7.10.0",
+    "@prisma/client": "6.19.0",
     "fastify": "latest",
     "zod": "latest"
   },
   "devDependencies": {
     "@types/node": "latest",
-    "prisma": "7.10.0",
+    "prisma": "6.19.0",
     "tsx": "latest",
     "typescript": "5.9.2",
     "vitest": "latest"
