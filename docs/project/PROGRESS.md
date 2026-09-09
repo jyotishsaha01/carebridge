@@ -8,21 +8,31 @@
 | v0.1 visual prototype | DONE | Initial concept prototype |
 | v0.2 repository foundation | DONE | Monorepo/environment scaffolding |
 | Test / QA environment foundation | DONE | `test` and `qa` branches plus test configuration |
-| v0.3 Patient Discovery | IN PROGRESS | Patient landing, specialist catalog, doctor profile modal, Smart Cost |
+| v0.3 Patient Discovery | DONE | Patient discovery UI now consumes the local API |
+| v0.4 API + PostgreSQL foundation | DONE | Fastify, Prisma, PostgreSQL, seed data and discovery endpoints |
+| v0.5 Availability + demo booking | IN PROGRESS | Seeded slots, slot API and local reservation flow |
+| Authentication / RBAC | FOUNDATION | Role model + server-side guard; production identity provider still required |
 
-## v0.3 acceptance criteria
+## Current acceptance criteria
 
 - [x] CareBridge branded patient landing page
 - [x] Premium responsive design system
-- [x] Synthetic specialist catalog
-- [x] Specialty filtering
-- [x] Doctor profile interaction
-- [x] Smart Cost display
-- [x] Unit tests for specialist data
-- [x] Playwright discovery tests
-- [ ] Backend specialist API
-- [ ] Real authentication
-- [ ] Booking and availability
+- [x] Specialist discovery from PostgreSQL through API
+- [x] Specialty filtering through API
+- [x] Doctor profile data from API
+- [x] Smart Cost values stored in database
+- [x] Local PostgreSQL Docker setup
+- [x] Seeded synthetic doctors and availability slots
+- [x] Availability endpoint
+- [x] Local demo appointment reservation
+- [x] User roles for Patient / Doctor / Admin
+- [x] Reusable API RBAC guard foundation
+- [ ] Production authentication / session validation
+- [ ] Production appointment/payment workflow
+- [ ] Medical intake and document upload
+- [ ] Video consultation
+- [ ] Doctor workspace
+- [ ] Admin workspace
 
 ## Environment policy
 
@@ -30,6 +40,6 @@ Development/test/QA environments use synthetic data only. No real patient health
 
 ## Next milestone
 
-**v0.4 — Booking Foundation**
+**v0.6 — Booking + identity foundation**
 
-Availability model → appointment slot selection → booking state machine → payment integration design → notifications.
+Production-ready identity integration → patient session → availability timezone handling → booking confirmation state → payment-provider integration design → notification events.
