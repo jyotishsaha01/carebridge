@@ -1,97 +1,45 @@
 import Fastify from "fastify";
 import cors from "@fastify/cors";
 import { PrismaClient } from "@prisma/client";
-import { z } from "zod";
+import { registerAuthRoutes } from "./auth";
 import { registerBookingRoutes } from "./booking";
-import { registerMedicalIntakeRoutes } from "./medicalIntake";
+import { registerMedicalIntakeRoutes } from "./medical-intake";
+import { registerClinicalRoutes } from "./clinical";
+import { registerDocumentRoutes } from "./documents";
+import { env } from "./env";
 
-const env = z.object({
-  PORT: z.coerce.number().int().positive().default(4000),
-  HOST: z.string().default("0.0.0.0"),
-  DATABASE_URL: z.string().min(1),
-  CORS_ORIGIN: z.string().default("http://localhost:3000"),
-  ALLOW_DEMO_AUTH: z.string().default("false").transform((value) => value === "true"),
-}).parse(process.env);
-
-export const prisma = new PrismaClient();
-
-function serializeDoctor(doctor: any) {
-  return {
-    id: doctor.slug,
-    name: doctor.name,
-    initials: doctor.initials,
-    specialty: doctor.specialty.name,
-    location: doctor.location,
-    rating: Number(doctor.rating),
-    experience: doctor.experienceYears,
-    price: Number(doctor.consultationPriceUsd),
-    usLow: doctor.costComparison ? Number(doctor.costComparison.comparableLowUsd) : null,
-    usHigh: doctor.costComparison ? Number(doctor.costComparison.comparableHighUsd) : null,
-    expertise: doctor.expertise,
-    bio: doctor.bio,
-    verified: doctor.isVerified,
-  };
-}
+const prisma = new PrismaClient();
 
 export async function buildApp() {
   const app = Fastify({ logger: true });
-  await app.register(cors, { origin: env.CORS_ORIGIN });
-
-  app.get("/health", async () => ({ status: "ok", service: "carebridge-api" }));
-
-  app.get("/v1/specialties", async () => prisma.specialty.findMany({ orderBy: { name: "asc" } }));
-
-  app.get("/v1/doctors", async (request) => {
-    const query = z.object({
-      specialty: z.string().optional(),
-      q: z.string().trim().min(1).optional(),
-      limit: z.coerce.number().int().min(1).max(50).default(20),
-    }).parse(request.query);
-
-    const doctors = await prisma.doctor.findMany({
-      where: {
-        isVerified: true,
-        isActive: true,
-        specialty: query.specialty ? { name: query.specialty } : undefined,
-        ...(query.q ? { OR: [
-          { name: { contains: query.q, mode: "insensitive" } },
-          { bio: { contains: query.q, mode: "insensitive" } },
-          { specialty: { name: { contains: query.q, mode: "insensitive" } } },
-        ] } : {}),
-      },
-      include: { specialty: true, costComparison: true },
-      orderBy: [{ rating: "desc" }, { experienceYears: "desc" }],
-      take: query.limit,
-    });
-
-    return doctors.map(serializeDoctor);
+  await app.register(cors, {
+    origin: env.WEB_ORIGIN,
+    credentials: true,
   });
 
-  app.get("/v1/doctors/:slug", async (request, reply) => {
-    const { slug } = z.object({ slug: z.string().min(1) }).parse(request.params);
-    const doctor = await prisma.doctor.findUnique({
-      where: { slug },
-      include: { specialty: true, costComparison: true },
-    });
-    if (!doctor || !doctor.isActive || !doctor.isVerified) return reply.code(404).send({ error: "Doctor not found" });
+  app.get("/health", async () => ({ status: "ok" }));
 
-    return {
-      ...serializeDoctor(doctor),
-      costComparison: doctor.costComparison ? {
-        patientCountry: doctor.costComparison.patientCountry,
-        comparableLowUsd: Number(doctor.costComparison.comparableLowUsd),
-        comparableHighUsd: Number(doctor.costComparison.comparableHighUsd),
-        sourceLabel: doctor.costComparison.sourceLabel,
-        disclaimer: doctor.costComparison.disclaimer,
-      } : null,
-    };
-  });
-
-  await registerBookingRoutes(app, env.ALLOW_DEMO_AUTH);
-  await registerMedicalIntakeRoutes(app, env.ALLOW_DEMO_AUTH);
   app.addHook("onClose", async () => prisma.$disconnect());
+
+  await registerAuthRoutes(app, prisma, env.ALLOW_DEMO_AUTH);
+  await registerBookingRoutes(app, prisma, env.ALLOW_DEMO_AUTH);
+  await registerMedicalIntakeRoutes(app, prisma, env.ALLOW_DEMO_AUTH);
+  await registerClinicalRoutes(app, prisma, env.ALLOW_DEMO_AUTH);
+  await registerDocumentRoutes(app, prisma, env.ALLOW_DEMO_AUTH);
+
   return app;
 }
 
-const app = await buildApp();
-app.listen({ port: env.PORT, host: env.HOST });
+async function start() {
+  const app = await buildApp();
+  try {
+    await app.listen({ port: env.PORT, host: env.HOST });
+  } catch (error) {
+    app.log.error(error);
+    process.exit(1);
+  }
+}
+
+if (require.main === module) {
+  void start();
+}
