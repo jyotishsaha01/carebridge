@@ -23,7 +23,8 @@
 | v1.7 Care journey | FOUNDATION | Optional treatment coordination roadmap layer |
 | v2.0 Production readiness | FOUNDATION | Security, secrets, encryption, monitoring, recovery and compliance gates |
 | v2.1 Account security + Admin UI | IMPLEMENTED | Email verification/recovery, audit trail, session controls and usable Admin console; final CI/release validation pending |
-| v2.2 Payments + Webhooks | IN PROGRESS | Provider-neutral payment intent, webhook signature boundary, lifecycle and idempotency foundation |
+| v2.2 Payments + Webhooks | IMPLEMENTED | Provider-neutral payment intent, lifecycle, webhook signature boundary and local/test idempotency |
+| v2.3 Patient Checkout | IN PROGRESS | PostgreSQL payment persistence, secure checkout handoff and patient payment history |
 
 ## Current acceptance criteria
 
@@ -51,8 +52,11 @@
 - [x] Payment lifecycle states
 - [x] Webhook signature verification boundary
 - [x] Duplicate webhook event protection in local/test processor
-- [ ] Persist payment intents and processed webhook IDs in PostgreSQL
-- [ ] Production payment provider and webhook reconciliation
+- [x] Payment intents persisted in PostgreSQL
+- [x] Processed webhook IDs persisted in PostgreSQL
+- [x] Patient checkout/status UI foundation
+- [x] Patient payment history UI
+- [ ] Provider-specific production payment integration and reconciliation
 - [ ] Production email provider and email-delivery verification
 - [ ] Production identity provider / MFA policy
 - [ ] HIPAA/privacy/legal review and signed vendor agreements where required
@@ -67,6 +71,6 @@ Development, test and QA environments use synthetic data only. No real patient h
 
 ## Next milestone
 
-**v2.2 — Payments + Webhooks**
+**v2.4 — Video Consultation Experience**
 
-Persist payment state and webhook idempotency in PostgreSQL, add provider-specific signature verification behind a server-side adapter, build the Patient checkout/status UI, then move into production video/payment vendor provisioning and formal security/privacy release gates.
+Complete the patient video-session UI and doctor session controls on the provider-neutral video boundary, then add provider-specific provisioning behind production-only configuration. Payment provider onboarding and formal security/privacy gates remain release prerequisites.
