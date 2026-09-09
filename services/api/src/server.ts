@@ -95,5 +95,16 @@ export async function buildApp() {
   return app;
 }
 
-const app = await buildApp();
-app.listen({ port: env.PORT, host: env.HOST });
+async function start() {
+  const app = await buildApp();
+  try {
+    await app.listen({ port: env.PORT, host: env.HOST });
+  } catch (error) {
+    app.log.error(error);
+    process.exit(1);
+  }
+}
+
+if (require.main === module) {
+  void start();
+}
