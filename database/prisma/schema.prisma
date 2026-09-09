@@ -13,6 +13,13 @@ enum SlotStatus { AVAILABLE BOOKED BLOCKED }
 enum IntakeStatus { DRAFT COMPLETED }
 enum ConsultationStatus { SCHEDULED IN_PROGRESS COMPLETED CANCELLED }
 enum FollowUpStatus { RECOMMENDED SCHEDULED COMPLETED CANCELLED }
+enum NotificationType { APPOINTMENT CLINICAL DOCUMENT PAYMENT SECURITY SYSTEM }
+enum NotificationChannel { IN_APP EMAIL SMS }
+enum NotificationStatus { UNREAD READ }
+enum CarePlanStatus { DRAFT ACTIVE COMPLETED CANCELLED }
+enum CareTaskStatus { TODO IN_PROGRESS DONE SKIPPED }
+enum CareRequestType { DIAGNOSTIC PROCEDURE SURGERY MEDICATION COORDINATION }
+enum CareRequestStatus { REQUESTED REVIEWING APPROVED SCHEDULED COMPLETED CANCELLED }
 
 model User {
   id                      String                    @id @default(cuid())
@@ -22,13 +29,13 @@ model User {
   role                    UserRole
   createdAt               DateTime                  @default(now())
   updatedAt               DateTime                  @updatedAt
-
   patient                 Patient?
   doctor                  Doctor?
   sessions                Session[]
   emailVerificationTokens EmailVerificationToken[]
   passwordResetTokens     PasswordResetToken[]
   auditLogs               AuditLog[]
+  notifications           Notification[]
 }
 
 model Session {
@@ -39,9 +46,7 @@ model Session {
   createdAt  DateTime  @default(now())
   lastSeenAt DateTime  @default(now())
   revokedAt  DateTime?
-
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
-
   @@index([userId, expiresAt])
   @@index([expiresAt, revokedAt])
 }
@@ -53,9 +58,7 @@ model EmailVerificationToken {
   expiresAt DateTime
   usedAt    DateTime?
   createdAt DateTime  @default(now())
-
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
-
   @@index([userId, expiresAt])
   @@index([expiresAt, usedAt])
 }
@@ -67,9 +70,7 @@ model PasswordResetToken {
   expiresAt DateTime
   usedAt    DateTime?
   createdAt DateTime  @default(now())
-
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
-
   @@index([userId, expiresAt])
   @@index([expiresAt, usedAt])
 }
@@ -85,12 +86,26 @@ model AuditLog {
   ipAddress    String?
   userAgent    String?
   createdAt    DateTime @default(now())
-
   actorUser User? @relation(fields: [actorUserId], references: [id], onDelete: SetNull)
-
   @@index([actorUserId, createdAt])
   @@index([action, createdAt])
   @@index([resourceType, resourceId, createdAt])
+}
+
+model Notification {
+  id        String               @id @default(cuid())
+  userId    String
+  type      NotificationType
+  channel   NotificationChannel @default(IN_APP)
+  status    NotificationStatus  @default(UNREAD)
+  title     String
+  body      String
+  metadata  Json?
+  readAt    DateTime?
+  createdAt DateTime             @default(now())
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  @@index([userId, status, createdAt])
+  @@index([userId, createdAt])
 }
 
 model Patient {
@@ -101,212 +116,236 @@ model Patient {
   country   String   @default("US")
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
-
-  user          User              @relation(fields: [userId], references: [id], onDelete: Cascade)
-  appointments  Appointment[]
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  appointments Appointment[]
   medicalIntake MedicalIntake[]
-  documents     MedicalDocument[]
+  documents MedicalDocument[]
   consultations Consultation[]
+  carePlans CarePlan[]
+  careRequests CareRequest[]
 }
 
 model Specialty {
-  id      String   @id @default(cuid())
-  name    String   @unique
+  id String @id @default(cuid())
+  name String @unique
   doctors Doctor[]
 }
 
 model Doctor {
-  id                   String       @id @default(cuid())
-  userId               String       @unique
-  specialtyId          String
-  slug                 String       @unique
-  name                 String
-  initials              String
-  location             String
-  rating               Decimal      @db.Decimal(2, 1)
-  experienceYears      Int
-  consultationPriceUsd Decimal      @db.Decimal(10, 2)
-  expertise            String[]
-  bio                  String
-  status               DoctorStatus @default(PENDING)
-  isVerified           Boolean      @default(false)
-  isActive              Boolean      @default(true)
-  createdAt             DateTime     @default(now())
-  updatedAt             DateTime     @updatedAt
-
-  user           User               @relation(fields: [userId], references: [id], onDelete: Cascade)
-  specialty      Specialty          @relation(fields: [specialtyId], references: [id])
+  id String @id @default(cuid())
+  userId String @unique
+  specialtyId String
+  slug String @unique
+  name String
+  initials String
+  location String
+  rating Decimal @db.Decimal(2, 1)
+  experienceYears Int
+  consultationPriceUsd Decimal @db.Decimal(10, 2)
+  expertise String[]
+  bio String
+  status DoctorStatus @default(PENDING)
+  isVerified Boolean @default(false)
+  isActive Boolean @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  specialty Specialty @relation(fields: [specialtyId], references: [id])
   costComparison CostComparison?
-  availability   AvailabilitySlot[]
-  appointments   Appointment[]
-  consultations  Consultation[]
+  availability AvailabilitySlot[]
+  appointments Appointment[]
+  consultations Consultation[]
 }
 
 model CostComparison {
-  id                 String   @id @default(cuid())
-  doctorId           String   @unique
-  patientCountry     String
-  comparableLowUsd   Decimal  @db.Decimal(10, 2)
-  comparableHighUsd  Decimal  @db.Decimal(10, 2)
-  sourceLabel        String
-  disclaimer         String
-  updatedAt          DateTime @updatedAt
-
+  id String @id @default(cuid())
+  doctorId String @unique
+  patientCountry String
+  comparableLowUsd Decimal @db.Decimal(10, 2)
+  comparableHighUsd Decimal @db.Decimal(10, 2)
+  sourceLabel String
+  disclaimer String
+  updatedAt DateTime @updatedAt
   doctor Doctor @relation(fields: [doctorId], references: [id], onDelete: Cascade)
 }
 
 model AvailabilitySlot {
-  id        String     @id @default(cuid())
-  doctorId  String
-  startsAt  DateTime
-  endsAt    DateTime
-  status    SlotStatus @default(AVAILABLE)
-  createdAt DateTime   @default(now())
-  updatedAt DateTime   @updatedAt
-
+  id String @id @default(cuid())
+  doctorId String
+  startsAt DateTime
+  endsAt DateTime
+  status SlotStatus @default(AVAILABLE)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
   doctor Doctor @relation(fields: [doctorId], references: [id], onDelete: Cascade)
-
   @@unique([doctorId, startsAt])
   @@index([doctorId, startsAt, status])
 }
 
 model Appointment {
-  id           String   @id @default(cuid())
-  patientId    String
-  doctorId     String
-  scheduledAt  DateTime
-  durationMin  Int      @default(30)
-  status       String   @default("BOOKED")
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
-
-  patient       Patient          @relation(fields: [patientId], references: [id])
-  doctor        Doctor           @relation(fields: [doctorId], references: [id])
+  id String @id @default(cuid())
+  patientId String
+  doctorId String
+  scheduledAt DateTime
+  durationMin Int @default(30)
+  status String @default("BOOKED")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  patient Patient @relation(fields: [patientId], references: [id])
+  doctor Doctor @relation(fields: [doctorId], references: [id])
   medicalIntake MedicalIntake?
-  documents     MedicalDocument[]
-  consultation  Consultation?
-
+  documents MedicalDocument[]
+  consultation Consultation?
   @@unique([doctorId, scheduledAt])
   @@index([patientId, scheduledAt])
 }
 
 model MedicalIntake {
-  id               String       @id @default(cuid())
-  appointmentId    String       @unique
-  patientId        String
-  reasonForVisit   String?
-  symptoms         String?
-  allergies        String?
-  medications      String?
-  medicalHistory   String?
-  surgeries        String?
-  familyHistory    String?
-  consentToConsult Boolean      @default(false)
-  consentedAt      DateTime?
-  status           IntakeStatus @default(DRAFT)
-  completedAt      DateTime?
-  createdAt        DateTime      @default(now())
-  updatedAt        DateTime      @updatedAt
-
+  id String @id @default(cuid())
+  appointmentId String @unique
+  patientId String
+  reasonForVisit String?
+  symptoms String?
+  allergies String?
+  medications String?
+  medicalHistory String?
+  surgeries String?
+  familyHistory String?
+  consentToConsult Boolean @default(false)
+  consentedAt DateTime?
+  status IntakeStatus @default(DRAFT)
+  completedAt DateTime?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
   appointment Appointment @relation(fields: [appointmentId], references: [id], onDelete: Cascade)
-  patient     Patient     @relation(fields: [patientId], references: [id], onDelete: Cascade)
-
+  patient Patient @relation(fields: [patientId], references: [id], onDelete: Cascade)
   @@index([patientId, updatedAt])
 }
 
 model MedicalDocument {
-  id               String   @id @default(cuid())
-  patientId        String
-  appointmentId    String?
+  id String @id @default(cuid())
+  patientId String
+  appointmentId String?
   originalFileName String
-  storageKey       String
-  contentType      String
-  sizeBytes        Int
-  createdAt        DateTime @default(now())
-
-  patient     Patient      @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  storageKey String
+  contentType String
+  sizeBytes Int
+  createdAt DateTime @default(now())
+  patient Patient @relation(fields: [patientId], references: [id], onDelete: Cascade)
   appointment Appointment? @relation(fields: [appointmentId], references: [id], onDelete: SetNull)
-
   @@index([patientId, createdAt])
   @@index([appointmentId])
 }
 
 model Consultation {
-  id            String             @id @default(cuid())
-  appointmentId String             @unique
-  patientId     String
-  doctorId      String
-  status        ConsultationStatus @default(SCHEDULED)
-  startedAt     DateTime?
-  endedAt       DateTime?
-  summary       String?
-  createdAt     DateTime           @default(now())
-  updatedAt     DateTime           @updatedAt
-
-  appointment Appointment    @relation(fields: [appointmentId], references: [id], onDelete: Cascade)
-  patient     Patient        @relation(fields: [patientId], references: [id], onDelete: Cascade)
-  doctor      Doctor         @relation(fields: [doctorId], references: [id], onDelete: Cascade)
-  notes       ClinicalNote[]
+  id String @id @default(cuid())
+  appointmentId String @unique
+  patientId String
+  doctorId String
+  status ConsultationStatus @default(SCHEDULED)
+  startedAt DateTime?
+  endedAt DateTime?
+  summary String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  appointment Appointment @relation(fields: [appointmentId], references: [id], onDelete: Cascade)
+  patient Patient @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  doctor Doctor @relation(fields: [doctorId], references: [id], onDelete: Cascade)
+  notes ClinicalNote[]
   prescription Prescription?
-  followUps   FollowUp[]
-
+  followUps FollowUp[]
   @@index([patientId, createdAt])
   @@index([doctorId, createdAt])
 }
 
 model ClinicalNote {
-  id                String   @id @default(cuid())
-  consultationId    String
-  assessment        String?
-  findings          String?
-  recommendations  String?
-  privateNotes      String?
-  createdAt         DateTime @default(now())
-  updatedAt         DateTime @updatedAt
-
+  id String @id @default(cuid())
+  consultationId String
+  assessment String?
+  findings String?
+  recommendations String?
+  privateNotes String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
   consultation Consultation @relation(fields: [consultationId], references: [id], onDelete: Cascade)
-
   @@index([consultationId, createdAt])
 }
 
 model Prescription {
-  id             String   @id @default(cuid())
-  consultationId String   @unique
-  instructions   String?
-  issuedAt       DateTime @default(now())
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
-
-  consultation Consultation       @relation(fields: [consultationId], references: [id], onDelete: Cascade)
-  items        PrescriptionItem[]
+  id String @id @default(cuid())
+  consultationId String @unique
+  instructions String?
+  issuedAt DateTime @default(now())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  consultation Consultation @relation(fields: [consultationId], references: [id], onDelete: Cascade)
+  items PrescriptionItem[]
 }
 
 model PrescriptionItem {
-  id             String   @id @default(cuid())
+  id String @id @default(cuid())
   prescriptionId String
-  medication     String
-  dose           String?
-  frequency      String?
-  duration       String?
-  route          String?
-  instructions   String?
-  createdAt      DateTime @default(now())
-
+  medication String
+  dose String?
+  frequency String?
+  duration String?
+  route String?
+  instructions String?
+  createdAt DateTime @default(now())
   prescription Prescription @relation(fields: [prescriptionId], references: [id], onDelete: Cascade)
-
   @@index([prescriptionId])
 }
 
 model FollowUp {
-  id             String         @id @default(cuid())
+  id String @id @default(cuid())
   consultationId String
-  dueAt          DateTime?
-  instructions   String?
-  status         FollowUpStatus @default(RECOMMENDED)
-  createdAt      DateTime       @default(now())
-  updatedAt      DateTime       @updatedAt
-
+  dueAt DateTime?
+  instructions String?
+  status FollowUpStatus @default(RECOMMENDED)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
   consultation Consultation @relation(fields: [consultationId], references: [id], onDelete: Cascade)
-
   @@index([consultationId, status])
+}
+
+model CarePlan {
+  id String @id @default(cuid())
+  patientId String
+  title String
+  description String?
+  status CarePlanStatus @default(DRAFT)
+  coordinatorNote String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  patient Patient @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  tasks CarePlanTask[]
+  @@index([patientId, status, updatedAt])
+}
+
+model CarePlanTask {
+  id String @id @default(cuid())
+  carePlanId String
+  title String
+  description String?
+  dueAt DateTime?
+  status CareTaskStatus @default(TODO)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  carePlan CarePlan @relation(fields: [carePlanId], references: [id], onDelete: Cascade)
+  @@index([carePlanId, status, dueAt])
+}
+
+model CareRequest {
+  id String @id @default(cuid())
+  patientId String
+  type CareRequestType
+  status CareRequestStatus @default(REQUESTED)
+  title String
+  description String?
+  country String?
+  targetDate DateTime?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  patient Patient @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  @@index([patientId, status, createdAt])
 }
