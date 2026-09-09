@@ -9,6 +9,7 @@ import { registerClinicalRoutes } from "./clinical";
 import { registerDocumentRoutes } from "./documents";
 import { registerPatientDashboardRoutes } from "./patientDashboard";
 import { registerVideoRoutes } from "./video";
+import { registerAdminRoutes } from "./admin";
 
 const env = z.object({
   PORT: z.coerce.number().int().positive().default(4000),
@@ -21,21 +22,7 @@ const env = z.object({
 export const prisma = new PrismaClient();
 
 function serializeDoctor(doctor: any) {
-  return {
-    id: doctor.slug,
-    name: doctor.name,
-    initials: doctor.initials,
-    specialty: doctor.specialty.name,
-    location: doctor.location,
-    rating: Number(doctor.rating),
-    experience: doctor.experienceYears,
-    price: Number(doctor.consultationPriceUsd),
-    usLow: doctor.costComparison ? Number(doctor.costComparison.comparableLowUsd) : null,
-    usHigh: doctor.costComparison ? Number(doctor.costComparison.comparableHighUsd) : null,
-    expertise: doctor.expertise,
-    bio: doctor.bio,
-    verified: doctor.isVerified,
-  };
+  return { id: doctor.slug, name: doctor.name, initials: doctor.initials, specialty: doctor.specialty.name, location: doctor.location, rating: Number(doctor.rating), experience: doctor.experienceYears, price: Number(doctor.consultationPriceUsd), usLow: doctor.costComparison ? Number(doctor.costComparison.comparableLowUsd) : null, usHigh: doctor.costComparison ? Number(doctor.costComparison.comparableHighUsd) : null, expertise: doctor.expertise, bio: doctor.bio, verified: doctor.isVerified };
 }
 
 export async function buildApp() {
@@ -60,18 +47,11 @@ export async function buildApp() {
   await registerClinicalRoutes(app, env.ALLOW_DEMO_AUTH);
   await registerDocumentRoutes(app, env.ALLOW_DEMO_AUTH);
   await registerPatientDashboardRoutes(app);
+  await registerAdminRoutes(app);
   await registerVideoRoutes(app);
   app.addHook("onClose", async () => prisma.$disconnect());
   return app;
 }
 
-async function start() {
-  const app = await buildApp();
-  await app.listen({ port: env.PORT, host: env.HOST });
-}
-
-start().catch(async (error) => {
-  console.error(error);
-  await prisma.$disconnect();
-  process.exit(1);
-});
+async function start() { const app = await buildApp(); await app.listen({ port: env.PORT, host: env.HOST }); }
+start().catch(async (error) => { console.error(error); await prisma.$disconnect(); process.exit(1); });
