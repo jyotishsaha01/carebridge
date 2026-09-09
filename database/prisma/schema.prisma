@@ -7,12 +7,37 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-enum DoctorStatus { PENDING VERIFIED SUSPENDED }
-enum UserRole { PATIENT DOCTOR ADMIN }
-enum SlotStatus { AVAILABLE BOOKED BLOCKED }
-enum IntakeStatus { DRAFT COMPLETED }
-enum ConsultationStatus { SCHEDULED IN_PROGRESS COMPLETED CANCELLED }
-enum FollowUpStatus { RECOMMENDED SCHEDULED COMPLETED CANCELLED }
+enum DoctorStatus {
+  PENDING
+  VERIFIED
+  SUSPENDED
+}
+enum UserRole {
+  PATIENT
+  DOCTOR
+  ADMIN
+}
+enum SlotStatus {
+  AVAILABLE
+  BOOKED
+  BLOCKED
+}
+enum IntakeStatus {
+  DRAFT
+  COMPLETED
+}
+enum ConsultationStatus {
+  SCHEDULED
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+}
+enum FollowUpStatus {
+  RECOMMENDED
+  SCHEDULED
+  COMPLETED
+  CANCELLED
+}
 
 model User {
   id                      String                    @id @default(cuid())
