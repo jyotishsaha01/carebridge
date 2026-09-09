@@ -7,19 +7,81 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-enum DoctorStatus { PENDING VERIFIED SUSPENDED }
-enum UserRole { PATIENT DOCTOR ADMIN }
-enum SlotStatus { AVAILABLE BOOKED BLOCKED }
-enum IntakeStatus { DRAFT COMPLETED }
-enum ConsultationStatus { SCHEDULED IN_PROGRESS COMPLETED CANCELLED }
-enum FollowUpStatus { RECOMMENDED SCHEDULED COMPLETED CANCELLED }
-enum NotificationType { APPOINTMENT CLINICAL DOCUMENT PAYMENT SECURITY SYSTEM }
-enum NotificationChannel { IN_APP EMAIL SMS }
-enum NotificationStatus { UNREAD READ }
-enum CarePlanStatus { DRAFT ACTIVE COMPLETED CANCELLED }
-enum CareTaskStatus { TODO IN_PROGRESS DONE SKIPPED }
-enum CareRequestType { DIAGNOSTIC PROCEDURE SURGERY MEDICATION COORDINATION }
-enum CareRequestStatus { REQUESTED REVIEWING APPROVED SCHEDULED COMPLETED CANCELLED }
+enum DoctorStatus {
+  PENDING
+  VERIFIED
+  SUSPENDED
+}
+enum UserRole {
+  PATIENT
+  DOCTOR
+  ADMIN
+}
+enum SlotStatus {
+  AVAILABLE
+  BOOKED
+  BLOCKED
+}
+enum IntakeStatus {
+  DRAFT
+  COMPLETED
+}
+enum ConsultationStatus {
+  SCHEDULED
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+}
+enum FollowUpStatus {
+  RECOMMENDED
+  SCHEDULED
+  COMPLETED
+  CANCELLED
+}
+enum NotificationType {
+  APPOINTMENT
+  CLINICAL
+  DOCUMENT
+  PAYMENT
+  SECURITY
+  SYSTEM
+}
+enum NotificationChannel {
+  IN_APP
+  EMAIL
+  SMS
+}
+enum NotificationStatus {
+  UNREAD
+  READ
+}
+enum CarePlanStatus {
+  DRAFT
+  ACTIVE
+  COMPLETED
+  CANCELLED
+}
+enum CareTaskStatus {
+  TODO
+  IN_PROGRESS
+  DONE
+  SKIPPED
+}
+enum CareRequestType {
+  DIAGNOSTIC
+  PROCEDURE
+  SURGERY
+  MEDICATION
+  COORDINATION
+}
+enum CareRequestStatus {
+  REQUESTED
+  REVIEWING
+  APPROVED
+  SCHEDULED
+  COMPLETED
+  CANCELLED
+}
 
 model User {
   id                      String                    @id @default(cuid())
