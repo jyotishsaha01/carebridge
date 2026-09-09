@@ -16,15 +16,16 @@
 | v0.9 Identity + sessions | DONE | Patient auth, hashed passwords, opaque sessions and role enforcement |
 | v1.0 Patient dashboard | DONE | Authenticated dashboard experience |
 | v1.1 Patient dashboard data | DONE | Patient-scoped appointment/clinical data APIs |
-| v1.2–v1.3 Video | FOUNDATION | Provider-neutral video/session boundary; live provider onboarding pending |
-| v1.4 Payments | FOUNDATION | Original provider-neutral payment architecture |
+| v1.2–v1.3 Video | FOUNDATION | Provider-neutral video/session boundary; intentionally parked |
+| v1.4 Payments | FOUNDATION | Provider-neutral payment architecture; intentionally parked |
 | v1.5 Doctor platform | FOUNDATION | Doctor operations and clinical workspace foundation |
 | v1.6 Admin platform | FOUNDATION | Admin operations, verification and audit operations |
-| v1.7 Care journey | FOUNDATION | Optional treatment coordination roadmap layer |
+| v1.7 Care journey | IMPLEMENTED | Care plans, care tasks and treatment/procedure coordination request foundation |
 | v2.0 Production readiness | FOUNDATION | Security, secrets, encryption, monitoring, recovery and compliance gates |
-| v2.1 Account security + Admin UI | IMPLEMENTED | Email verification/recovery, audit trail, session controls and usable Admin console; final CI/release validation pending |
+| v2.1 Account security + Admin UI | IMPLEMENTED | Email verification/recovery, audit trail, session controls and usable Admin console |
 | v2.2 Payments + Webhooks | IMPLEMENTED | Provider-neutral payment intent, lifecycle, webhook signature boundary and local/test idempotency |
-| v2.3 Patient Checkout | IN PROGRESS | PostgreSQL payment persistence, secure checkout handoff and patient payment history |
+| v2.3 Patient Checkout | IN PROGRESS | PostgreSQL payment persistence, secure checkout handoff and patient payment history; intentionally parked for now |
+| v2.4 Platform Completion | IMPLEMENTED | Notifications, Care Hub, care requests, care plans/tasks, admin command center and operational analytics |
 
 ## Current acceptance criteria
 
@@ -56,21 +57,29 @@
 - [x] Processed webhook IDs persisted in PostgreSQL
 - [x] Patient checkout/status UI foundation
 - [x] Patient payment history UI
+- [x] Patient notification center
+- [x] Notification read/unread APIs
+- [x] Patient Care Hub
+- [x] Care plan and care-task APIs
+- [x] Care request workflow for diagnostic/medication/procedure/surgery coordination
+- [x] Admin care-request queue
+- [x] Admin operational analytics
+- [x] Patient dashboard connected to live patient counts and notifications
 - [ ] Provider-specific production payment integration and reconciliation
-- [ ] Production email provider and email-delivery verification
+- [ ] Production email/SMS provider and delivery verification
 - [ ] Production identity provider / MFA policy
 - [ ] HIPAA/privacy/legal review and signed vendor agreements where required
-- [ ] Production encrypted object storage and access-control validation
+- [ ] Production encrypted object storage, malware scanning and access-control validation
 - [ ] Production video provider provisioning and security review
 - [ ] Security assessment / penetration testing
 - [ ] Backup/restore rehearsal and disaster-recovery validation
+- [ ] Production medication fulfillment, pharmacy partnerships and jurisdictional checks
+- [ ] Hospital/procedure coordination contracts and cross-border care operations
 
 ## Environment policy
 
 Development, test and QA environments use synthetic data only. No real patient health information or production credentials should be committed or used in CI.
 
-## Next milestone
+## Current development direction
 
-**v2.4 — Video Consultation Experience**
-
-Complete the patient video-session UI and doctor session controls on the provider-neutral video boundary, then add provider-specific provisioning behind production-only configuration. Payment provider onboarding and formal security/privacy gates remain release prerequisites.
+**Booking, payment checkout and video are intentionally parked.** Continue building the remaining platform around them: doctor operations, care coordination, notifications, production storage, compliance/security controls, analytics, support and deployment readiness.
