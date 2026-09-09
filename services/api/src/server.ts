@@ -11,6 +11,7 @@ import { registerPatientDashboardRoutes } from "./patientDashboard";
 import { registerVideoRoutes } from "./video";
 import { registerProductionReadiness } from "./productionReadiness";
 import { registerAdminRoutes } from "./admin";
+import { registerPaymentRoutes } from "./paymentRoutes";
 
 const env = z.object({
   PORT: z.coerce.number().int().positive().default(4000),
@@ -76,6 +77,7 @@ export async function buildApp() {
   await registerProductionReadiness(app);
   await registerVideoRoutes(app);
   await registerAdminRoutes(app);
+  await registerPaymentRoutes(app);
 
   app.addHook("onClose", async () => prisma.$disconnect());
   return app;
