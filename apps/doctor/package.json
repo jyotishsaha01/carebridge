@@ -1,0 +1,12 @@
+{
+  "name": "@carebridge/doctor",
+  "private": true,
+  "version": "0.2.0",
+  "scripts": {
+    "lint": "node -e \"console.log('doctor lint: foundation placeholder')\"",
+    "typecheck": "node -e \"console.log('doctor typecheck: foundation placeholder')\"",
+    "test": "node -e \"console.log('doctor tests: foundation placeholder')\"",
+    "test:e2e": "node -e \"console.log('doctor e2e: pending application setup')\"",
+    "build": "node -e \"console.log('doctor build: foundation placeholder')\""
+  }
+}
