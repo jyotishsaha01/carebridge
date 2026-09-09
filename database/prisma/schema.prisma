@@ -19,6 +19,12 @@ enum UserRole {
   ADMIN
 }
 
+enum SlotStatus {
+  AVAILABLE
+  BOOKED
+  BLOCKED
+}
+
 model User {
   id        String   @id @default(cuid())
   email     String   @unique
@@ -56,7 +62,7 @@ model Doctor {
   slug                 String       @unique
   name                 String
   initials              String
-  location             String
+  location              String
   rating               Decimal      @db.Decimal(2, 1)
   experienceYears      Int
   consultationPriceUsd Decimal      @db.Decimal(10, 2)
@@ -68,10 +74,11 @@ model Doctor {
   createdAt             DateTime     @default(now())
   updatedAt             DateTime     @updatedAt
 
-  user           User            @relation(fields: [userId], references: [id], onDelete: Cascade)
-  specialty      Specialty       @relation(fields: [specialtyId], references: [id])
+  user           User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  specialty      Specialty        @relation(fields: [specialtyId], references: [id])
   costComparison CostComparison?
-  appointments  Appointment[]
+  availability   AvailabilitySlot[]
+  appointments   Appointment[]
 }
 
 model CostComparison {
@@ -87,6 +94,21 @@ model CostComparison {
   doctor Doctor @relation(fields: [doctorId], references: [id], onDelete: Cascade)
 }
 
+model AvailabilitySlot {
+  id        String     @id @default(cuid())
+  doctorId  String
+  startsAt  DateTime
+  endsAt    DateTime
+  status    SlotStatus @default(AVAILABLE)
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
+
+  doctor Doctor @relation(fields: [doctorId], references: [id], onDelete: Cascade)
+
+  @@unique([doctorId, startsAt])
+  @@index([doctorId, startsAt, status])
+}
+
 model Appointment {
   id         String   @id @default(cuid())
   patientId  String
@@ -100,6 +122,6 @@ model Appointment {
   patient Patient @relation(fields: [patientId], references: [id])
   doctor  Doctor  @relation(fields: [doctorId], references: [id])
 
-  @@index([doctorId, scheduledAt])
+  @@unique([doctorId, scheduledAt])
   @@index([patientId, scheduledAt])
 }
