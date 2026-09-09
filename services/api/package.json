@@ -1,12 +1,27 @@
 {
   "name": "@carebridge/api",
   "private": true,
-  "version": "0.2.0",
+  "version": "0.4.0",
   "scripts": {
-    "lint": "node -e \"console.log('api lint: foundation placeholder')\"",
-    "typecheck": "node -e \"console.log('api typecheck: foundation placeholder')\"",
-    "test": "node -e \"console.log('api tests: foundation placeholder')\"",
-    "test:e2e": "node -e \"console.log('api e2e: pending API setup')\"",
-    "build": "node -e \"console.log('api build: foundation placeholder')\""
+    "dev": "tsx watch src/server.ts",
+    "build": "tsc -p tsconfig.json",
+    "start": "node dist/server.js",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "db:generate": "prisma generate --schema ../../database/prisma/schema.prisma",
+    "db:push": "prisma db push --schema ../../database/prisma/schema.prisma"
+  },
+  "dependencies": {
+    "@fastify/cors": "latest",
+    "@prisma/client": "latest",
+    "fastify": "latest",
+    "zod": "latest"
+  },
+  "devDependencies": {
+    "@types/node": "latest",
+    "prisma": "latest",
+    "tsx": "latest",
+    "typescript": "latest",
+    "vitest": "latest"
   }
 }

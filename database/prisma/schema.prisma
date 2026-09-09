@@ -1,0 +1,105 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum DoctorStatus {
+  PENDING
+  VERIFIED
+  SUSPENDED
+}
+
+enum UserRole {
+  PATIENT
+  DOCTOR
+  ADMIN
+}
+
+model User {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  role      UserRole
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  patient Patient?
+  doctor  Doctor?
+}
+
+model Patient {
+  id        String   @id @default(cuid())
+  userId    String   @unique
+  firstName String?
+  lastName  String?
+  country   String   @default("US")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  appointments Appointment[]
+}
+
+model Specialty {
+  id      String   @id @default(cuid())
+  name    String   @unique
+  doctors Doctor[]
+}
+
+model Doctor {
+  id                   String       @id @default(cuid())
+  userId               String       @unique
+  specialtyId          String
+  slug                 String       @unique
+  name                 String
+  initials              String
+  location             String
+  rating               Decimal      @db.Decimal(2, 1)
+  experienceYears      Int
+  consultationPriceUsd Decimal      @db.Decimal(10, 2)
+  expertise             String[]
+  bio                   String
+  status                DoctorStatus @default(PENDING)
+  isVerified            Boolean      @default(false)
+  isActive              Boolean      @default(true)
+  createdAt             DateTime     @default(now())
+  updatedAt             DateTime     @updatedAt
+
+  user           User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  specialty      Specialty       @relation(fields: [specialtyId], references: [id])
+  costComparison CostComparison?
+  appointments  Appointment[]
+}
+
+model CostComparison {
+  id                 String   @id @default(cuid())
+  doctorId            String   @unique
+  patientCountry      String
+  comparableLowUsd    Decimal  @db.Decimal(10, 2)
+  comparableHighUsd   Decimal  @db.Decimal(10, 2)
+  sourceLabel         String
+  disclaimer          String
+  updatedAt           DateTime @updatedAt
+
+  doctor Doctor @relation(fields: [doctorId], references: [id], onDelete: Cascade)
+}
+
+model Appointment {
+  id         String   @id @default(cuid())
+  patientId  String
+  doctorId   String
+  scheduledAt DateTime
+  durationMin Int      @default(30)
+  status     String   @default("BOOKED")
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  patient Patient @relation(fields: [patientId], references: [id])
+  doctor  Doctor  @relation(fields: [doctorId], references: [id])
+
+  @@index([doctorId, scheduledAt])
+  @@index([patientId, scheduledAt])
+}
