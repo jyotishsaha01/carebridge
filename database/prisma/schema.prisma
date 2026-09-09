@@ -25,6 +25,11 @@ enum SlotStatus {
   BLOCKED
 }
 
+enum IntakeStatus {
+  DRAFT
+  COMPLETED
+}
+
 model User {
   id        String   @id @default(cuid())
   email     String   @unique
@@ -45,8 +50,10 @@ model Patient {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
-  appointments Appointment[]
+  user          User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  appointments  Appointment[]
+  medicalIntake MedicalIntake[]
+  documents     MedicalDocument[]
 }
 
 model Specialty {
@@ -62,20 +69,20 @@ model Doctor {
   slug                 String       @unique
   name                 String
   initials              String
-  location              String
+  location             String
   rating               Decimal      @db.Decimal(2, 1)
   experienceYears      Int
   consultationPriceUsd Decimal      @db.Decimal(10, 2)
-  expertise             String[]
-  bio                   String
-  status                DoctorStatus @default(PENDING)
-  isVerified            Boolean      @default(false)
-  isActive              Boolean      @default(true)
+  expertise            String[]
+  bio                  String
+  status               DoctorStatus @default(PENDING)
+  isVerified           Boolean      @default(false)
+  isActive             Boolean      @default(true)
   createdAt             DateTime     @default(now())
   updatedAt             DateTime     @updatedAt
 
-  user           User             @relation(fields: [userId], references: [id], onDelete: Cascade)
-  specialty      Specialty        @relation(fields: [specialtyId], references: [id])
+  user           User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  specialty      Specialty          @relation(fields: [specialtyId], references: [id])
   costComparison CostComparison?
   availability   AvailabilitySlot[]
   appointments   Appointment[]
@@ -84,12 +91,12 @@ model Doctor {
 model CostComparison {
   id                 String   @id @default(cuid())
   doctorId            String   @unique
-  patientCountry      String
-  comparableLowUsd    Decimal  @db.Decimal(10, 2)
-  comparableHighUsd   Decimal  @db.Decimal(10, 2)
-  sourceLabel         String
-  disclaimer          String
-  updatedAt           DateTime @updatedAt
+  patientCountry     String
+  comparableLowUsd   Decimal  @db.Decimal(10, 2)
+  comparableHighUsd  Decimal  @db.Decimal(10, 2)
+  sourceLabel        String
+  disclaimer         String
+  updatedAt          DateTime @updatedAt
 
   doctor Doctor @relation(fields: [doctorId], references: [id], onDelete: Cascade)
 }
@@ -121,7 +128,50 @@ model Appointment {
 
   patient Patient @relation(fields: [patientId], references: [id])
   doctor  Doctor  @relation(fields: [doctorId], references: [id])
+  medicalIntake MedicalIntake?
+  documents MedicalDocument[]
 
   @@unique([doctorId, scheduledAt])
   @@index([patientId, scheduledAt])
+}
+
+model MedicalIntake {
+  id              String       @id @default(cuid())
+  appointmentId   String       @unique
+  patientId       String
+  reasonForVisit  String?
+  symptoms        String?
+  allergies       String?
+  medications     String?
+  medicalHistory  String?
+  surgeries       String?
+  familyHistory   String?
+  consentToConsult Boolean     @default(false)
+  consentedAt     DateTime?
+  status          IntakeStatus @default(DRAFT)
+  completedAt     DateTime?
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  appointment Appointment @relation(fields: [appointmentId], references: [id], onDelete: Cascade)
+  patient     Patient     @relation(fields: [patientId], references: [id], onDelete: Cascade)
+
+  @@index([patientId, updatedAt])
+}
+
+model MedicalDocument {
+  id             String   @id @default(cuid())
+  patientId      String
+  appointmentId  String?
+  originalFileName String
+  storageKey     String
+  contentType    String
+  sizeBytes      Int
+  createdAt      DateTime @default(now())
+
+  patient     Patient      @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  appointment Appointment? @relation(fields: [appointmentId], references: [id], onDelete: SetNull)
+
+  @@index([patientId, createdAt])
+  @@index([appointmentId])
 }
