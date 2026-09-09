@@ -1,0 +1,12 @@
+{
+  "name": "@carebridge/ui",
+  "private": true,
+  "version": "0.2.0",
+  "scripts": {
+    "lint": "node -e \"console.log('ui lint: foundation placeholder')\"",
+    "typecheck": "node -e \"console.log('ui typecheck: foundation placeholder')\"",
+    "test": "node -e \"console.log('ui tests: foundation placeholder')\"",
+    "test:e2e": "node -e \"console.log('ui e2e: pending application setup')\"",
+    "build": "node -e \"console.log('ui build: foundation placeholder')\""
+  }
+}
