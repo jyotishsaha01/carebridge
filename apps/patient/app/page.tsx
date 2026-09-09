@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { bookAppointment, getAvailability, getDoctors, getSpecialties, type ApiDoctor, type ApiSlot } from "../lib/api";
-import { doctors as demoDoctors, specialties as demoSpecialties, type Doctor } from "../data";
+import { doctors as demoDoctors, specialties as demoSpecialties } from "../data";
 
 export default function Home() {
   const [query, setQuery] = useState("");
@@ -24,9 +24,7 @@ export default function Home() {
         setSpecialtyList(specialtiesResponse.map((item) => item.name));
         setApiState("connected");
       })
-      .catch(() => {
-        if (active) setApiState("fallback");
-      });
+      .catch(() => { if (active) setApiState("fallback"); });
     return () => { active = false; };
   }, []);
 
@@ -54,29 +52,21 @@ export default function Home() {
     setBookingState("idle");
     const from = new Date();
     const to = new Date(from.getTime() + 14 * 24 * 60 * 60 * 1000);
-    try {
-      setSlots(await getAvailability(doctor.id, from, to));
-    } catch {
-      setSlots([]);
-    }
+    try { setSlots(await getAvailability(doctor.id, from, to)); } catch { setSlots([]); }
   }
 
   async function reserveSlot() {
     if (!selectedDoctor || !selectedSlot) return;
     setBookingState("loading");
-    try {
-      await bookAppointment(selectedDoctor.id, selectedSlot.startsAt);
-      setBookingState("success");
-    } catch {
-      setBookingState("error");
-    }
+    try { await bookAppointment(selectedDoctor.id, selectedSlot.startsAt); setBookingState("success"); }
+    catch { setBookingState("error"); }
   }
 
   return (
     <main className="site-shell">
       <header className="topbar">
         <a className="brand" href="#top" aria-label="CareBridge home"><span className="brand-mark">C</span><span>CareBridge</span></a>
-        <nav className="nav-links" aria-label="Primary navigation"><a href="#specialists">Find Specialists</a><a href="#how-it-works">How It Works</a><a href="#smart-cost">Smart Cost</a><a className="nav-login" href="#login">Sign in</a></nav>
+        <nav className="nav-links" aria-label="Primary navigation"><a href="#specialists">Find Specialists</a><a href="#how-it-works">How It Works</a><a href="#smart-cost">Smart Cost</a><a className="nav-login" href="/login">Sign in</a></nav>
       </header>
 
       <section id="top" className="hero">
@@ -101,16 +91,14 @@ export default function Home() {
         <div className="section-heading"><div><div className="eyebrow">SPECIALIST NETWORK</div><h2>Find care that fits your needs.</h2></div><p>Search by specialty, doctor or area of expertise.</p></div>
         <div className="search-row"><label className="search-box"><span>⌕</span><input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search doctors or specialties" aria-label="Search doctors or specialties" /></label><select value={specialty} onChange={(e) => setSpecialty(e.target.value)} aria-label="Filter by specialty"><option>All specialties</option>{specialtyList.map((item) => <option key={item}>{item}</option>)}</select></div>
         {apiState === "fallback" && <div className="empty-state">API is offline, so the page is showing synthetic demo data. Start PostgreSQL and the CareBridge API to use live discovery and booking.</div>}
-        <div className="doctor-grid">
-          {filteredDoctors.map((doctor) => <article className="doctor-card" key={doctor.id}>
-            <div className="doctor-card-top"><div className="avatar">{doctor.initials}</div><span className="verified">✓ Verified</span></div>
-            <h3>{doctor.name}</h3><p className="doctor-specialty">{doctor.specialty}</p><div className="rating">★ {doctor.rating} <span>·</span> {doctor.experience} years experience</div>
-            <div className="expertise-row">{doctor.expertise.slice(0, 3).map((item) => <span key={item}>{item}</span>)}</div>
-            <div className="doctor-meta"><span>📍 {doctor.location}</span><span>🗣 English</span></div>
-            <div className="doctor-price"><div><span>Consultation</span><strong>${doctor.price}</strong></div><div className="us-compare"><span>US estimate</span><strong>{doctor.usLow && doctor.usHigh ? `$${doctor.usLow}–$${doctor.usHigh}` : "See profile"}</strong></div></div>
-            <button className="button dark full" onClick={() => openDoctor(doctor)}>View specialist</button>
-          </article>)}
-        </div>
+        <div className="doctor-grid">{filteredDoctors.map((doctor) => <article className="doctor-card" key={doctor.id}>
+          <div className="doctor-card-top"><div className="avatar">{doctor.initials}</div><span className="verified">✓ Verified</span></div>
+          <h3>{doctor.name}</h3><p className="doctor-specialty">{doctor.specialty}</p><div className="rating">★ {doctor.rating} <span>·</span> {doctor.experience} years experience</div>
+          <div className="expertise-row">{doctor.expertise.slice(0, 3).map((item) => <span key={item}>{item}</span>)}</div>
+          <div className="doctor-meta"><span>📍 {doctor.location}</span><span>🗣 English</span></div>
+          <div className="doctor-price"><div><span>Consultation</span><strong>${doctor.price}</strong></div><div className="us-compare"><span>US estimate</span><strong>{doctor.usLow && doctor.usHigh ? `$${doctor.usLow}–$${doctor.usHigh}` : "See profile"}</strong></div></div>
+          <button className="button dark full" onClick={() => openDoctor(doctor)}>View specialist</button>
+        </article>)}</div>
         {!filteredDoctors.length && <div className="empty-state">No specialists match your search. Try a broader term or specialty.</div>}
       </section>
 
