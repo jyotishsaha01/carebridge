@@ -19,13 +19,18 @@ export default function LoginPage() {
     setBusy(true);
     setMessage("");
     try {
-      const result = mode === "login" ? await signIn(email, password) : await signUp(email, password);
-      if (mode === "signup" && result.emailVerificationRequired) {
-        const suffix = result.devVerificationToken ? ` Development verification token: ${result.devVerificationToken}` : " Check your email for the verification link.";
-        setMessage(`Account created.${suffix}`);
-        return;
+      if (mode === "signup") {
+        const result = await signUp(email, password);
+        if (result.emailVerificationRequired) {
+          const suffix = result.devVerificationToken ? ` Development verification token: ${result.devVerificationToken}` : " Check your email for the verification link.";
+          setMessage(`Account created.${suffix}`);
+          return;
+        }
+        setMessage(`Welcome to CareBridge. Signed in as ${result.user.email}.`);
+      } else {
+        const result = await signIn(email, password);
+        setMessage(`Welcome to CareBridge. Signed in as ${result.user.email}.`);
       }
-      setMessage(`Welcome to CareBridge. Signed in as ${result.user.email}.`);
       window.setTimeout(() => router.push("/dashboard"), 500);
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Unable to continue. Please try again.");
