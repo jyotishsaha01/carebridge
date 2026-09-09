@@ -3,6 +3,7 @@ import cors from "@fastify/cors";
 import { PrismaClient } from "@prisma/client";
 import { z } from "zod";
 import { registerBookingRoutes } from "./booking";
+import { registerMedicalIntakeRoutes } from "./medicalIntake";
 
 const env = z.object({
   PORT: z.coerce.number().int().positive().default(4000),
@@ -37,7 +38,6 @@ export async function buildApp() {
   await app.register(cors, { origin: env.CORS_ORIGIN });
 
   app.get("/health", async () => ({ status: "ok", service: "carebridge-api" }));
-
   app.get("/v1/specialties", async () => prisma.specialty.findMany({ orderBy: { name: "asc" } }));
 
   app.get("/v1/doctors", async (request) => {
@@ -68,12 +68,8 @@ export async function buildApp() {
 
   app.get("/v1/doctors/:slug", async (request, reply) => {
     const { slug } = z.object({ slug: z.string().min(1) }).parse(request.params);
-    const doctor = await prisma.doctor.findUnique({
-      where: { slug },
-      include: { specialty: true, costComparison: true },
-    });
+    const doctor = await prisma.doctor.findUnique({ where: { slug }, include: { specialty: true, costComparison: true } });
     if (!doctor || !doctor.isActive || !doctor.isVerified) return reply.code(404).send({ error: "Doctor not found" });
-
     return {
       ...serializeDoctor(doctor),
       costComparison: doctor.costComparison ? {
@@ -87,9 +83,21 @@ export async function buildApp() {
   });
 
   await registerBookingRoutes(app, env.ALLOW_DEMO_AUTH);
+  await registerMedicalIntakeRoutes(app, env.ALLOW_DEMO_AUTH);
   app.addHook("onClose", async () => prisma.$disconnect());
   return app;
 }
 
-const app = await buildApp();
-app.listen({ port: env.PORT, host: env.HOST });
+async function start() {
+  const app = await buildApp();
+  try {
+    await app.listen({ port: env.PORT, host: env.HOST });
+  } catch (error) {
+    app.log.error(error);
+    process.exit(1);
+  }
+}
+
+if (require.main === module) {
+  void start();
+}
