@@ -2,41 +2,34 @@
 
 ## Release status
 
-| Item | Status |
-|---|---|
-| Product blueprint v1.0 | DONE |
-| Phase 1 scope frozen | DONE |
-| Phase 2/3 parked | DONE |
-| GitHub repository | DONE |
-| `develop` branch | DONE |
-| `test` branch | DONE |
-| `qa` branch | DONE |
-| Testing environment policy | DONE |
-| Test environment variables template | DONE |
-| CI foundation | DONE |
-| Patient production UI | NEXT |
-| Doctor production UI | NEXT |
-| Admin production UI | NEXT |
-| Backend/API | NEXT |
-| PostgreSQL schema | NEXT |
-| Authentication/RBAC | NEXT |
+| Milestone | Status | Notes |
+|---|---|---|
+| Product blueprint v1.0 | DONE | Phase 1 defined; Phase 2/3 parked |
+| v0.1 visual prototype | DONE | Initial concept prototype |
+| v0.2 repository foundation | DONE | Monorepo/environment scaffolding |
+| Test / QA environment foundation | DONE | `test` and `qa` branches plus test configuration |
+| v0.3 Patient Discovery | IN PROGRESS | Patient landing, specialist catalog, doctor profile modal, Smart Cost |
 
-## Branch strategy
+## v0.3 acceptance criteria
 
-- `main`: release-ready baseline.
-- `develop`: active integration.
-- `test`: shared integration/validation branch.
-- `qa`: QA validation branch.
-- `feature/*`: isolated implementation work.
+- [x] CareBridge branded patient landing page
+- [x] Premium responsive design system
+- [x] Synthetic specialist catalog
+- [x] Specialty filtering
+- [x] Doctor profile interaction
+- [x] Smart Cost display
+- [x] Unit tests for specialist data
+- [x] Playwright discovery tests
+- [ ] Backend specialist API
+- [ ] Real authentication
+- [ ] Booking and availability
 
-## Environment strategy
+## Environment policy
 
-`local` → `test` → `qa` → `staging` → `production`
-
-Only synthetic data is permitted through `local`, `test` and `qa`.
+Development/test/QA environments use synthetic data only. No real patient health information or production credentials should be committed or used in CI.
 
 ## Next milestone
 
-**v0.2 — Application Foundation**
+**v0.4 — Booking Foundation**
 
-Build the Patient, Doctor and Admin application shells, shared design system, API skeleton, authentication foundation and core database schema.
+Availability model → appointment slot selection → booking state machine → payment integration design → notifications.
