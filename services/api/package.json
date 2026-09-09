@@ -1,0 +1,12 @@
+{
+  "name": "@carebridge/api",
+  "private": true,
+  "version": "0.2.0",
+  "scripts": {
+    "lint": "node -e \"console.log('api lint: foundation placeholder')\"",
+    "typecheck": "node -e \"console.log('api typecheck: foundation placeholder')\"",
+    "test": "node -e \"console.log('api tests: foundation placeholder')\"",
+    "test:e2e": "node -e \"console.log('api e2e: pending API setup')\"",
+    "build": "node -e \"console.log('api build: foundation placeholder')\""
+  }
+}
