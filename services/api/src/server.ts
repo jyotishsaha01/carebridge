@@ -4,6 +4,7 @@ import { PrismaClient } from "@prisma/client";
 import { z } from "zod";
 import { registerBookingRoutes } from "./booking";
 import { registerMedicalIntakeRoutes } from "./medicalIntake";
+import { registerClinicalRoutes } from "./clinical";
 
 const env = z.object({
   PORT: z.coerce.number().int().positive().default(4000),
@@ -89,6 +90,7 @@ export async function buildApp() {
 
   await registerBookingRoutes(app, env.ALLOW_DEMO_AUTH);
   await registerMedicalIntakeRoutes(app, env.ALLOW_DEMO_AUTH);
+  await registerClinicalRoutes(app, env.ALLOW_DEMO_AUTH);
   app.addHook("onClose", async () => prisma.$disconnect());
   return app;
 }
