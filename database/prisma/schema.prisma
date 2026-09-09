@@ -7,54 +7,28 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-enum DoctorStatus {
-  PENDING
-  VERIFIED
-  SUSPENDED
-}
-
-enum UserRole {
-  PATIENT
-  DOCTOR
-  ADMIN
-}
-
-enum SlotStatus {
-  AVAILABLE
-  BOOKED
-  BLOCKED
-}
-
-enum IntakeStatus {
-  DRAFT
-  COMPLETED
-}
-
-enum ConsultationStatus {
-  SCHEDULED
-  IN_PROGRESS
-  COMPLETED
-  CANCELLED
-}
-
-enum FollowUpStatus {
-  RECOMMENDED
-  SCHEDULED
-  COMPLETED
-  CANCELLED
-}
+enum DoctorStatus { PENDING VERIFIED SUSPENDED }
+enum UserRole { PATIENT DOCTOR ADMIN }
+enum SlotStatus { AVAILABLE BOOKED BLOCKED }
+enum IntakeStatus { DRAFT COMPLETED }
+enum ConsultationStatus { SCHEDULED IN_PROGRESS COMPLETED CANCELLED }
+enum FollowUpStatus { RECOMMENDED SCHEDULED COMPLETED CANCELLED }
 
 model User {
-  id           String    @id @default(cuid())
-  email        String    @unique
-  passwordHash String?
-  role         UserRole
-  createdAt    DateTime  @default(now())
-  updatedAt    DateTime  @updatedAt
+  id                      String                    @id @default(cuid())
+  email                   String                    @unique
+  passwordHash            String?
+  emailVerifiedAt         DateTime?
+  role                    UserRole
+  createdAt               DateTime                  @default(now())
+  updatedAt               DateTime                  @updatedAt
 
-  patient  Patient?
-  doctor   Doctor?
-  sessions Session[]
+  patient                 Patient?
+  doctor                  Doctor?
+  sessions                Session[]
+  emailVerificationTokens EmailVerificationToken[]
+  passwordResetTokens     PasswordResetToken[]
+  auditLogs               AuditLog[]
 }
 
 model Session {
@@ -70,6 +44,53 @@ model Session {
 
   @@index([userId, expiresAt])
   @@index([expiresAt, revokedAt])
+}
+
+model EmailVerificationToken {
+  id        String    @id @default(cuid())
+  userId    String
+  tokenHash String    @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, expiresAt])
+  @@index([expiresAt, usedAt])
+}
+
+model PasswordResetToken {
+  id        String    @id @default(cuid())
+  userId    String
+  tokenHash String    @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, expiresAt])
+  @@index([expiresAt, usedAt])
+}
+
+model AuditLog {
+  id           String   @id @default(cuid())
+  actorUserId  String?
+  action       String
+  resourceType String
+  resourceId   String?
+  outcome      String
+  metadata     Json?
+  ipAddress    String?
+  userAgent    String?
+  createdAt    DateTime @default(now())
+
+  actorUser User? @relation(fields: [actorUserId], references: [id], onDelete: SetNull)
+
+  @@index([actorUserId, createdAt])
+  @@index([action, createdAt])
+  @@index([resourceType, resourceId, createdAt])
 }
 
 model Patient {
@@ -234,14 +255,14 @@ model Consultation {
 }
 
 model ClinicalNote {
-  id             String   @id @default(cuid())
-  consultationId String
-  assessment     String?
-  findings       String?
-  recommendations String?
-  privateNotes   String?
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
+  id                String   @id @default(cuid())
+  consultationId    String
+  assessment        String?
+  findings          String?
+  recommendations  String?
+  privateNotes      String?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
 
   consultation Consultation @relation(fields: [consultationId], references: [id], onDelete: Cascade)
 
