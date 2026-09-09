@@ -1,12 +1,29 @@
 {
   "name": "@carebridge/admin",
   "private": true,
-  "version": "0.2.0",
+  "version": "2.1.0",
   "scripts": {
-    "lint": "node -e \"console.log('admin lint: foundation placeholder')\"",
-    "typecheck": "node -e \"console.log('admin typecheck: foundation placeholder')\"",
-    "test": "node -e \"console.log('admin tests: foundation placeholder')\"",
-    "test:e2e": "node -e \"console.log('admin e2e: pending application setup')\"",
-    "build": "node -e \"console.log('admin build: foundation placeholder')\""
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "eslint .",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run --passWithNoTests",
+    "test:e2e": "playwright test"
+  },
+  "dependencies": {
+    "next": "16.3.4",
+    "react": "19.2.0",
+    "react-dom": "19.2.0"
+  },
+  "devDependencies": {
+    "@playwright/test": "latest",
+    "@types/node": "latest",
+    "@types/react": "latest",
+    "@types/react-dom": "latest",
+    "eslint": "9.39.5",
+    "eslint-config-next": "16.3.4",
+    "typescript": "5.9.2",
+    "vitest": "latest"
   }
 }
