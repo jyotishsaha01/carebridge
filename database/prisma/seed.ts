@@ -7,7 +7,7 @@ function hashPassword(password: string) {
   return `scrypt$16384$8$1${salt.toString("base64url")}${derived.toString("base64url")}`;
 }
 
-const DEMO_PASSWORD = "CareBridge-UAT-2026!";
+const DEMO_PASSWORD = process.env.CAREBRIDGE_UAT_PASSWORD ?? "CareBridge-UAT-Local-Only-2026!";
 
 
 const prisma = new PrismaClient();
