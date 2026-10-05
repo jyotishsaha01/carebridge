@@ -19,7 +19,7 @@ export async function registerClinicalRoutes(app: FastifyInstance) {
   app.get("/v1/doctor/appointments", async (request, reply) => {
     const user = await requireDoctor(request, reply);
     if (!user?.doctor) return;
-    return prisma.appointment.findMany({ where: { doctorId: user.doctor.id }, orderBy: { scheduledAt: "asc" }, include: { patient: { select: { id: true, firstName: true, lastName: true, country: true } }, medicalIntake: { select: { status: true, reasonForVisit: true, symptoms: true, allergies: true, medications: true } }, consultation: { select: { id: true, status: true, startedAt: true, endedAt: true, summary: true } } } });
+    return prisma.appointment.findMany({ where: { doctorId: user.doctor.id }, orderBy: { scheduledAt: "asc" }, include: { patient: { select: { id: true, firstName: true, lastName: true, country: true } }, medicalIntake: { select: { status: true, reasonForVisit: true, symptoms: true, allergies: true, medications: true } }, consultation: { select: { id: true, status: true, startedAt: true, endedAt: true, summary: true } }, documents: { select: { id: true, originalFileName: true, contentType: true, sizeBytes: true, createdAt: true }, orderBy: { createdAt: "desc" }, take: 50 } } });
   });
 
   app.put("/v1/doctor/appointments/:appointmentId/consultation", async (request, reply) => {
