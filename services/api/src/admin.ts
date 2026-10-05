@@ -60,6 +60,29 @@ export async function registerAdminRoutes(app: FastifyInstance) {
     return credential;
   });
 
+  app.get("/v1/admin/appointments", async (request, reply) => {
+    const user = await requireAdmin(request, reply);
+    if (!user) return;
+    const query = z.object({ status: z.string().trim().min(1).optional(), limit: z.coerce.number().int().min(1).max(100).default(50) }).parse(request.query);
+    return prisma.appointment.findMany({
+      where: query.status ? { status: query.status } : undefined,
+      orderBy: { scheduledAt: "desc" },
+      take: query.limit,
+      include: { patient: { select: { id: true, firstName: true, lastName: true, country: true } }, doctor: { select: { id: true, name: true, specialty: { select: { name: true } } } }, consultation: { select: { id: true, status: true, startedAt: true, endedAt: true } } },
+    });
+  });
+
+  app.get("/v1/admin/patients", async (request, reply) => {
+    const user = await requireAdmin(request, reply);
+    if (!user) return;
+    const query = z.object({ limit: z.coerce.number().int().min(1).max(100).default(50) }).parse(request.query);
+    return prisma.patient.findMany({
+      orderBy: { createdAt: "desc" },
+      take: query.limit,
+      select: { id: true, firstName: true, lastName: true, country: true, createdAt: true, user: { select: { email: true, isEmailVerified: true, status: true } } },
+    });
+  });
+
   app.get("/v1/admin/audit-logs", async (request, reply) => {
     const user = await requireAdmin(request, reply);
     if (!user) return;
