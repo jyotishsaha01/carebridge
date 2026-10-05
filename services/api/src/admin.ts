@@ -43,6 +43,23 @@ export async function registerAdminRoutes(app: FastifyInstance) {
     return doctor;
   });
 
+  app.get("/v1/admin/doctors/:doctorId/credentials", async (request, reply) => {
+    const user = await requireAdmin(request, reply);
+    if (!user) return;
+    const { doctorId } = z.object({ doctorId: z.string().min(1) }).parse(request.params);
+    return prisma.doctorCredential.findMany({ where: { doctorId }, orderBy: { createdAt: "desc" } });
+  });
+
+  app.patch("/v1/admin/credentials/:credentialId", async (request, reply) => {
+    const user = await requireAdmin(request, reply);
+    if (!user) return;
+    const { credentialId } = z.object({ credentialId: z.string().min(1) }).parse(request.params);
+    const input = z.object({ status: z.enum(["PENDING", "APPROVED", "REJECTED"]) }).parse(request.body);
+    const credential = await prisma.doctorCredential.update({ where: { id: credentialId }, data: { status: input.status, reviewedAt: new Date(), reviewedByUserId: user.id } });
+    await recordAudit(request, { actorUserId: user.id, action: "ADMIN_CREDENTIAL_REVIEWED", resourceType: "DoctorCredential", resourceId: credential.id, outcome: "SUCCESS", metadata: { status: input.status } });
+    return credential;
+  });
+
   app.get("/v1/admin/audit-logs", async (request, reply) => {
     const user = await requireAdmin(request, reply);
     if (!user) return;
