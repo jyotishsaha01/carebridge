@@ -4,7 +4,7 @@ import { prisma } from "./server";
 import { requireRole } from "./auth";
 import { recordAudit } from "./audit";
 
-const slotInput = z.object({ startsAt: z.coerce.date(), endAt: z.coerce.date() }).refine((v) => v.endAt > v.startsAt, { message: "endAt must be after startsAt" });
+const slotInput = z.object({ startsAt: z.coerce.date(), endsAt: z.coerce.date() }).refine((v) => v.endsAt > v.startsAt, { message: "endsAt must be after startsAt" });
 
 export async function registerDoctorOperationsRoutes(app: FastifyInstance) {
   app.get("/v1/doctor/me", async (request, reply) => {
@@ -36,9 +36,9 @@ export async function registerDoctorOperationsRoutes(app: FastifyInstance) {
     if (!user?.doctor) return;
     const input = slotInput.parse(request.body);
     if (input.startsAt <= new Date()) return reply.code(400).send({ error: "Availability must be in the future" });
-    const overlap = await prisma.availabilitySlot.findFirst({ where: { doctorId: user.doctor.id, startsAt: { lt: input.endAt }, endAt: { gt: input.startsAt } } });
+    const overlap = await prisma.availabilitySlot.findFirst({ where: { doctorId: user.doctor.id, startsAt: { lt: input.endsAt }, endsAt: { gt: input.startsAt } } });
     if (overlap) return reply.code(409).send({ error: "Availability overlaps an existing slot" });
-    const slot = await prisma.availabilitySlot.create({ data: { doctorId: user.doctor.id, startsAt: input.startsAt, endAt: input.endAt, status: "AVAILABLE" } });
+    const slot = await prisma.availabilitySlot.create({ data: { doctorId: user.doctor.id, startsAt: input.startsAt, endsAt: input.endsAt, status: "AVAILABLE" } });
     await recordAudit(request, { actorUserId: user.id, action: "DOCTOR_AVAILABILITY_CREATED", resourceType: "AvailabilitySlot", resourceId: slot.id, outcome: "SUCCESS" });
     return reply.code(201).send(slot);
   });
