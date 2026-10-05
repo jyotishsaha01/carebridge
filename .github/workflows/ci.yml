@@ -51,6 +51,8 @@ jobs:
           node-version: 22
       - name: Install dependencies
         run: pnpm install --no-frozen-lockfile
+      - name: Create ephemeral UAT credentials
+        run: echo "CAREBRIDGE_UAT_PASSWORD=UAT-$(openssl rand -hex 16)-2026!" >> "$GITHUB_ENV"
       - name: Prepare synthetic UAT database
         run: pnpm db:setup
       - name: Start API
