@@ -24,5 +24,16 @@ export async function registerDocumentRoutes(app: FastifyInstance){
   await recordAudit(request,{actorUserId:auth.user.id,action:"PATIENT_DOCUMENT_UPLOADED",resourceType:"MedicalDocument",resourceId:document.id,outcome:"SUCCESS"});
   return {ok:true,documentId:document.id};
  });
+ app.get("/v1/documents/:documentId/content",async(request,reply)=>{
+  const auth=await requirePatient(request,reply);if(!auth)return;
+  const {documentId}=z.object({documentId:z.string().min(1)}).parse(request.params);
+  const document=await prisma.medicalDocument.findFirst({where:{id:documentId,patientId:auth.patient.id}});
+  if(!document)return reply.code(404).send({error:"Document not found"});
+  try{
+    const content=await (await import("./documentStoragePrototype")).readDocument(document.storageKey);
+    await recordAudit(request,{actorUserId:auth.user.id,action:"PATIENT_DOCUMENT_CONTENT_VIEWED",resourceType:"MedicalDocument",resourceId:document.id,outcome:"SUCCESS"});
+    return {contentBase64:content.toString("base64"),contentType:document.contentType,originalFileName:document.originalFileName};
+  }catch{return reply.code(404).send({error:"Document content is not available"});}
+ });
  app.post("/v1/documents/upload-intent",async(request,reply)=>{const auth=await requirePatient(request,reply);if(!auth)return;const input=z.object({fileName:z.string().trim().min(1).max(200),contentType:z.string().min(1),sizeBytes:z.number().int().positive(),appointmentId:z.string().min(1).optional()}).parse(request.body);if(input.appointmentId){const appointment=await prisma.appointment.findFirst({where:{id:input.appointmentId,patientId:auth.patient.id},select:{id:true}});if(!appointment)return reply.code(404).send({error:"Appointment not found"});}try{const intent=createUploadIntent({patientId:auth.patient.id,...input});const provider=await documentStorage.createUploadIntent({storageKey:intent.storageKey,contentType:intent.contentType,sizeBytes:input.sizeBytes});const document=await prisma.medicalDocument.create({data:{patientId:auth.patient.id,appointmentId:input.appointmentId,originalFileName:input.fileName,storageKey:intent.storageKey,contentType:input.contentType,sizeBytes:input.sizeBytes},select:{id:true,originalFileName:true,contentType:true,sizeBytes:true,storageKey:true,appointmentId:true,createdAt:true}});await recordAudit(request,{actorUserId:auth.user.id,action:"PATIENT_DOCUMENT_UPLOAD_INTENT_CREATED",resourceType:"MedicalDocument",resourceId:document.id,outcome:"SUCCESS"});return reply.code(201).send({document,upload:provider});}catch(error){return reply.code(400).send({error:error instanceof Error?error.message:"Invalid document"});}}
 }
