@@ -1,4 +1,14 @@
 import { PrismaClient } from "@prisma/client";
+import { scryptSync, randomBytes } from "node:crypto";
+
+function hashPassword(password: string) {
+  const salt = randomBytes(16);
+  const derived = scryptSync(password, salt, 64, { N: 16384, r: 8, p: 1 });
+  return `scrypt$16384$8$1${salt.toString("base64url")}${derived.toString("base64url")}`;
+}
+
+const DEMO_PASSWORD = "CareBridge-UAT-2026!";
+
 
 const prisma = new PrismaClient();
 
@@ -82,8 +92,8 @@ async function main() {
     const email = `${doctor.slug}@demo.carebridge.local`;
     const user = await prisma.user.upsert({
       where: { email },
-      update: { role: "DOCTOR" },
-      create: { email, role: "DOCTOR" },
+      update: { role: "DOCTOR", passwordHash: hashPassword(DEMO_PASSWORD), emailVerifiedAt: new Date() },
+      create: { email, role: "DOCTOR", passwordHash: hashPassword(DEMO_PASSWORD), emailVerifiedAt: new Date() },
     });
 
     const savedDoctor = await prisma.doctor.upsert({
@@ -156,15 +166,15 @@ async function main() {
   const adminEmail = "demo-admin@demo.carebridge.local";
   await prisma.user.upsert({
     where: { email: adminEmail },
-    update: { role: "ADMIN" },
-    create: { email: adminEmail, role: "ADMIN" },
+    update: { role: "ADMIN", passwordHash: hashPassword(DEMO_PASSWORD), emailVerifiedAt: new Date() },
+    create: { email: adminEmail, role: "ADMIN", passwordHash: hashPassword(DEMO_PASSWORD), emailVerifiedAt: new Date() },
   });
 
   const patientEmail = "demo-patient@demo.carebridge.local";
   const patientUser = await prisma.user.upsert({
     where: { email: patientEmail },
-    update: { role: "PATIENT" },
-    create: { email: patientEmail, role: "PATIENT" },
+    update: { role: "PATIENT", passwordHash: hashPassword(DEMO_PASSWORD), emailVerifiedAt: new Date() },
+    create: { email: patientEmail, role: "PATIENT", passwordHash: hashPassword(DEMO_PASSWORD), emailVerifiedAt: new Date() },
   });
   await prisma.patient.upsert({
     where: { userId: patientUser.id },
