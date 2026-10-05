@@ -43,6 +43,27 @@ export async function registerDoctorOperationsRoutes(app: FastifyInstance) {
     return reply.code(201).send(slot);
   });
 
+  app.get("/v1/doctor/credentials", async (request, reply) => {
+    const user = await requireRole(request, reply, ["DOCTOR"]);
+    if (!user?.doctor) return;
+    return prisma.doctorCredential.findMany({ where: { doctorId: user.doctor.id }, orderBy: { createdAt: "desc" } });
+  });
+
+  app.post("/v1/doctor/credentials", async (request, reply) => {
+    const user = await requireRole(request, reply, ["DOCTOR"]);
+    if (!user?.doctor) return;
+    const input = z.object({
+      type: z.string().trim().min(2).max(80),
+      licenseNumber: z.string().trim().min(2).max(120),
+      jurisdiction: z.string().trim().min(2).max(120),
+      documentName: z.string().trim().max(200).optional(),
+      storageKey: z.string().trim().max(500).optional(),
+    }).parse(request.body);
+    const credential = await prisma.doctorCredential.create({ data: { doctorId: user.doctor.id, ...input } });
+    await recordAudit(request, { actorUserId: user.id, action: "DOCTOR_CREDENTIAL_SUBMITTED", resourceType: "DoctorCredential", resourceId: credential.id, outcome: "SUCCESS" });
+    return reply.code(201).send(credential);
+  });
+
   app.delete("/v1/doctor/availability/:slotId", async (request, reply) => {
     const user = await requireRole(request, reply, ["DOCTOR"]);
     if (!user?.doctor) return;
