@@ -1,3 +1,8 @@
+export type AuthUser = { id:string; email:string; role:"PATIENT"|"DOCTOR"|"ADMIN"; };
+export function signIn(email:string,password:string){return apiFetch<{user:AuthUser}>("/v1/auth/login",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({email,password})});}
+export function getCurrentUser(){return apiFetch<{user:AuthUser}>("/v1/auth/me");}
+export function signOut(){return apiFetch<{ok:true}>("/v1/auth/logout",{method:"POST"});}
+
 export type Overview = { patients: number; doctors: number; verifiedDoctors: number; appointments: number; openSessions: number };
 export type AdminDoctor = { id: string; name: string; slug: string; location: string; status: string; isVerified: boolean; isActive: boolean; specialty: { name: string } };
 export type AuditLog = { id: string; actorUserId: string | null; action: string; resourceType: string; resourceId: string | null; outcome: string; metadata: Record<string, unknown> | null; createdAt: string };
