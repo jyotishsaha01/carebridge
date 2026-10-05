@@ -6,6 +6,7 @@ type Credential={id:string;type:string;licenseNumber:string;jurisdiction:string;
 export default function DoctorProfile(){
  const[doctor,setDoctor]=useState<Doctor|null>(null);const[credentials,setCredentials]=useState<Credential[]>([]);const[bio,setBio]=useState("");const[location,setLocation]=useState("");const[price,setPrice]=useState("");const[expertise,setExpertise]=useState("");const[message,setMessage]=useState("");const[loading,setLoading]=useState(true);
  async function load(){try{const[d,c]=await Promise.all([fetch(API+"/v1/doctor/me",{credentials:"include"}),fetch(API+"/v1/doctor/credentials",{credentials:"include"})]);if(!d.ok||!c.ok)throw Error();const dv=await d.json();setDoctor(dv);setBio(dv.bio??"");setLocation(dv.location??"");setPrice(String(dv.consultationPriceUsd??""));setExpertise(Array.isArray(dv.expertise)?dv.expertise.join(", "):"");setCredentials(await c.json())}catch{setMessage("Sign in as a doctor to manage your profile.")}finally{setLoading(false)}}
+// eslint-disable-next-line react-hooks/set-state-in-effect
 useEffect(()=>{void load()},[]);
 async function save(){const r=await fetch(API+"/v1/doctor/me/profile",{method:"PATCH",credentials:"include",headers:{"content-type":"application/json"},body:JSON.stringify({bio,location,consultationPriceUsd:Number(price),expertise:expertise.split(",").map(x=>x.trim()).filter(Boolean)})});if(r.ok){setDoctor(await r.json());setMessage("Profile saved.")}else setMessage("Unable to save profile.")}
 if(loading)return <main className="doctor-page">Loading profile…</main>;
