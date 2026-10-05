@@ -106,7 +106,7 @@ export default function Operations() {
             {patients.slice(0, 15).map((patient) => (
               <div key={patient.id} style={{ padding: "12px 0", borderTop: "1px solid #eef2f7" }}>
                 <b>{patientName(patient)}</b>
-                <div style={{ fontSize: 13, color: "#64748b" }}>{patient.user.email} · {patient.country} · {patient.user.status}</div>
+                <div style={{ fontSize: 13, color: "#64748b" }}>{patient.user.email} · {patient.country} · {patient.user.isEmailVerified ? "Email verified" : "Email pending"}</div>
               </div>
             ))}
             {!patients.length && <p>No patients.</p>}
