@@ -1,15 +1,34 @@
-# CareBridge Database
+# CareBridge local database
 
-Phase 1 database foundation will use PostgreSQL.
+CareBridge now uses SQLite + Prisma for local development, so the Patient, Doctor and Admin apps can run without an external database service.
 
-Planned domains:
+## Setup
 
-- Identity: User, Patient, Doctor, Admin
-- Provider: DoctorCredential, Specialty, Availability
-- Care: Appointment, VideoSession, Consultation, ClinicalNote, FollowUp
-- Patient health: MedicalProfile, MedicalHistory, MedicalDocument, Medication, Prescription, PrescriptionItem
-- Financial: Payment, Refund, DoctorPayout
-- Communication: Message, Notification
-- Platform: CostComparison, Consent, SupportTicket, AuditLog
+From the repository root:
 
-Development and QA environments use synthetic data only.
+```bash
+pnpm install
+pnpm db:setup
+```
+
+This creates `database/prisma/dev.db`, applies the Prisma schema, and seeds demo specialists, availability slots, and a demo patient.
+
+## Run the API
+
+```bash
+pnpm --filter @carebridge/api dev
+```
+
+The API defaults to port 4000 and uses the local SQLite database.
+
+## Reset local data
+
+```bash
+pnpm db:reset
+```
+
+This is development/demo data only. Do not put real patient information into the local database.
+
+## Later production migration
+
+Prisma remains the database abstraction, so the local SQLite implementation can later be migrated to PostgreSQL/cloud infrastructure after production security, privacy, HIPAA, backup, and deployment requirements are completed.
