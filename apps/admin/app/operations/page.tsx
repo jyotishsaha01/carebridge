@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { getCurrentUser } from "../../lib/api";
 import { useEffect, useState } from "react";
 import {
   getAppointments,
@@ -23,7 +24,7 @@ export default function Operations() {
   const [error, setError] = useState("");
   const [busy, setBusy] = useState("");
 
-  async function load() {
+  async function load() {const session=await getCurrentUser();if(session.user.role!=="ADMIN")throw new Error("Administrator access required.");
     try {
       const [d, p, a] = await Promise.all([getDoctors(), getPatients(), getAppointments()]);
       setDoctors(d);
