@@ -17,6 +17,7 @@ export default function NotificationsPage() {
     if (!response.ok) { setError("Sign in to view your notifications."); return; }
     const data = await response.json(); setItems(data.notifications); setUnread(data.unreadCount);
   }
+  // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => { void load(); }, []);
 
   async function mark(id: string) { await fetch(`${API_URL}/v1/notifications/${id}/read`, { method: "POST", credentials: "include" }); await load(); }
