@@ -3,7 +3,7 @@ generator client {
 }
 
 datasource db {
-  provider = "postgresql"
+  provider = "sqlite"
   url      = env("DATABASE_URL")
 }
 
@@ -201,10 +201,10 @@ model Doctor {
   name String
   initials String
   location String
-  rating Decimal @db.Decimal(2, 1)
+  rating Float
   experienceYears Int
-  consultationPriceUsd Decimal @db.Decimal(10, 2)
-  expertise String[]
+  consultationPriceUsd Float
+  expertise Json
   bio String
   status DoctorStatus @default(PENDING)
   isVerified Boolean @default(false)
