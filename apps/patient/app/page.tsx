@@ -1,10 +1,12 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import { bookAppointment, getAvailability, getDoctors, getSpecialties, type ApiDoctor, type ApiSlot } from "../lib/api";
 import { doctors as demoDoctors, specialties as demoSpecialties } from "../data";
 
 export default function Home() {
+  const router = useRouter();
   const [query, setQuery] = useState("");
   const [specialty, setSpecialty] = useState("All specialties");
   const [doctorList, setDoctorList] = useState<ApiDoctor[]>(demoDoctors as ApiDoctor[]);
@@ -51,7 +53,7 @@ export default function Home() {
     setBookingState("loading");
     try {
       const appointment = await bookAppointment(selectedDoctor.id, selectedSlot.startsAt);
-      window.location.assign(`/checkout/${encodeURIComponent(appointment.id)}`);
+      router.push(`/checkout/${encodeURIComponent(appointment.id)}`);
     } catch { setBookingState("error"); }
   }
 
