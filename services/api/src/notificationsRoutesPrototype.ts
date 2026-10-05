@@ -1,4 +1,4 @@
-import type { FastifyInstance } from "fastify";
+import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { z } from "zod";
 import {
   getNotificationPreferences,
@@ -17,24 +17,18 @@ const allowedRoles = ["PATIENT", "DOCTOR", "ADMIN"] as const;
 const notificationTypes = ["CONSULTATION", "PRESCRIPTION", "FOLLOW_UP", "CARE_PLAN", "DOCUMENT", "SUPPORT", "SYSTEM"] as const;
 
 export async function registerNotificationPrototypeRoutes(app: FastifyInstance) {
-  const list = async (request: Parameters<FastifyInstance["get"]>[1] extends never ? never : any, reply: any) => {
+  const list = async (request: FastifyRequest, reply: FastifyReply) => {
     const user = await requireRole(request, reply, [...allowedRoles]);
     if (!user) return;
     const role = user.role as NotificationRole;
     await seedNotificationPrototype(user.id, role);
-    return {
-      notifications: await listNotifications(user.id),
-      unreadCount: await unreadCount(user.id),
-      source: "persistent",
-    };
+    return { notifications: await listNotifications(user.id), unreadCount: await unreadCount(user.id), source: "persistent" };
   };
 
-  // Canonical production-style routes.
   app.get("/v1/notifications", list);
-  // Backward-compatible prototype route retained for older clients.
   app.get("/v1/prototype/notifications", list);
 
-  const markRead = async (request: any, reply: any) => {
+  const markRead = async (request: FastifyRequest, reply: FastifyReply) => {
     const user = await requireRole(request, reply, [...allowedRoles]);
     if (!user) return;
     const { id } = z.object({ id: z.string().min(1) }).parse(request.params);
@@ -45,7 +39,7 @@ export async function registerNotificationPrototypeRoutes(app: FastifyInstance) 
   app.post("/v1/notifications/:id/read", markRead);
   app.post("/v1/prototype/notifications/:id/read", markRead);
 
-  const markAllRead = async (request: any, reply: any) => {
+  const markAllRead = async (request: FastifyRequest, reply: FastifyReply) => {
     const user = await requireRole(request, reply, [...allowedRoles]);
     if (!user) return;
     return { updated: await markAllNotificationsRead(user.id) };
@@ -53,7 +47,7 @@ export async function registerNotificationPrototypeRoutes(app: FastifyInstance) 
   app.post("/v1/notifications/read-all", markAllRead);
   app.post("/v1/prototype/notifications/read-all", markAllRead);
 
-  const preferences = async (request: any, reply: any) => {
+  const preferences = async (request: FastifyRequest, reply: FastifyReply) => {
     const user = await requireRole(request, reply, [...allowedRoles]);
     if (!user) return;
     return getNotificationPreferences(user.id);
@@ -61,7 +55,7 @@ export async function registerNotificationPrototypeRoutes(app: FastifyInstance) 
   app.get("/v1/notification-preferences", preferences);
   app.get("/v1/prototype/notification-preferences", preferences);
 
-  const updatePreference = async (request: any, reply: any) => {
+  const updatePreference = async (request: FastifyRequest, reply: FastifyReply) => {
     const user = await requireRole(request, reply, [...allowedRoles]);
     if (!user) return;
     const { type } = z.object({ type: z.enum(notificationTypes) }).parse(request.params);
