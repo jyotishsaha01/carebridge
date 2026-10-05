@@ -79,7 +79,7 @@ export async function registerAdminRoutes(app: FastifyInstance) {
     return prisma.patient.findMany({
       orderBy: { createdAt: "desc" },
       take: query.limit,
-      select: { id: true, firstName: true, lastName: true, country: true, createdAt: true, user: { select: { email: true, isEmailVerified: true, status: true } } },
+      select: { id: true, firstName: true, lastName: true, country: true, createdAt: true, user: { select: { email: true, isEmailVerified: true } } },
     });
   });
 
