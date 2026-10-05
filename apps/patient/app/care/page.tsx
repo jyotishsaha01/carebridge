@@ -27,6 +27,7 @@ export default function CarePage() {
     if (requestsResponse.ok) setRequests(await requestsResponse.json());
   }
 
+  // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => { void load(); }, []);
 
   async function createRequest(event: FormEvent) {
