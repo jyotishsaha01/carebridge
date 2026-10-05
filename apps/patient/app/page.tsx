@@ -53,7 +53,7 @@ export default function Home() {
     setBookingState("loading");
     try {
       const appointment = await bookAppointment(selectedDoctor.id, selectedSlot.startsAt);
-      router.push(`/checkout/${encodeURIComponent(appointment.id)}`);
+      router.push(`/appointments/${encodeURIComponent(appointment.id)}`);
     } catch { setBookingState("error"); }
   }
 
