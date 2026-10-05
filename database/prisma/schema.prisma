@@ -86,8 +86,8 @@ model Notification {
   id        String               @id @default(cuid())
   userId    String
   type      String
-  channel   String @default(IN_APP)
-  status    String  @default(UNREAD)
+  channel   String @default("IN_APP")
+  status    String  @default("UNREAD")
   title     String
   body      String
   metadata  Json?
@@ -134,7 +134,7 @@ model Doctor {
   consultationPriceUsd Float
   expertise Json
   bio String
-  status String @default(PENDING)
+  status String @default("PENDING")
   isVerified Boolean @default(false)
   isActive Boolean @default(true)
   createdAt DateTime @default(now())
@@ -165,7 +165,7 @@ model AvailabilitySlot {
   doctorId String
   startsAt DateTime
   endsAt DateTime
-  status String @default(AVAILABLE)
+  status String @default("AVAILABLE")
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
   doctor Doctor @relation(fields: [doctorId], references: [id], onDelete: Cascade)
@@ -204,7 +204,7 @@ model MedicalIntake {
   familyHistory String?
   consentToConsult Boolean @default(false)
   consentedAt DateTime?
-  status String @default(DRAFT)
+  status String @default("DRAFT")
   completedAt DateTime?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -233,7 +233,7 @@ model Consultation {
   appointmentId String @unique
   patientId String
   doctorId String
-  status String @default(SCHEDULED)
+  status String @default("SCHEDULED")
   startedAt DateTime?
   endedAt DateTime?
   summary String?
@@ -292,7 +292,7 @@ model FollowUp {
   consultationId String
   dueAt DateTime?
   instructions String?
-  status String @default(RECOMMENDED)
+  status String @default("RECOMMENDED")
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
   consultation Consultation @relation(fields: [consultationId], references: [id], onDelete: Cascade)
@@ -304,7 +304,7 @@ model CarePlan {
   patientId String
   title String
   description String?
-  status String @default(DRAFT)
+  status String @default("DRAFT")
   coordinatorNote String?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -319,7 +319,7 @@ model CarePlanTask {
   title String
   description String?
   dueAt DateTime?
-  status String @default(TODO)
+  status String @default("TODO")
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
   carePlan CarePlan @relation(fields: [carePlanId], references: [id], onDelete: Cascade)
@@ -330,7 +330,7 @@ model CareRequest {
   id String @id @default(cuid())
   patientId String
   type String
-  status String @default(REQUESTED)
+  status String @default("REQUESTED")
   title String
   description String?
   country String?
@@ -351,7 +351,7 @@ model DoctorCredential {
   jurisdiction     String
   documentName     String?
   storageKey       String?
-  status           String @default(PENDING)
+  status           String @default("PENDING")
   reviewedAt       DateTime?
   reviewedByUserId String?
   createdAt        DateTime         @default(now())
@@ -368,7 +368,7 @@ model SupportTicket {
   userId     String
   category   String
   message    String
-  status     String @default(OPEN)
+  status     String @default("OPEN")
   createdAt  DateTime            @default(now())
   updatedAt  DateTime            @updatedAt
   resolvedAt DateTime?
