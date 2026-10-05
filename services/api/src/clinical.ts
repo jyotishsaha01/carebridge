@@ -3,6 +3,7 @@ import { z } from "zod";
 import { prisma } from "./server";
 import { requireRole } from "./auth";
 import { recordAudit } from "./audit";
+import { createNotification } from "./notificationsPrototype";
 
 const consultationPayload = z.object({ status: z.enum(["SCHEDULED", "IN_PROGRESS", "COMPLETED", "CANCELLED"]), summary: z.string().trim().max(10000).optional().nullable() });
 const notePayload = z.object({ assessment: z.string().trim().max(10000).optional().nullable(), findings: z.string().trim().max(10000).optional().nullable(), recommendations: z.string().trim().max(10000).optional().nullable(), privateNotes: z.string().trim().max(10000).optional().nullable() });
@@ -15,46 +16,108 @@ async function requireDoctor(request: FastifyRequest, reply: FastifyReply) {
   return user;
 }
 
+async function notifyPatient(patientId: string, type: "CONSULTATION" | "PRESCRIPTION" | "FOLLOW_UP", title: string, body: string) {
+  const patient = await prisma.patient.findUnique({ where: { id: patientId }, select: { userId: true } });
+  if (!patient?.userId) return;
+  await createNotification({ userId: patient.userId, role: "PATIENT", type, title, body });
+}
+
 export async function registerClinicalRoutes(app: FastifyInstance) {
   app.get("/v1/doctor/appointments", async (request, reply) => {
     const user = await requireDoctor(request, reply);
     if (!user?.doctor) return;
-    return prisma.appointment.findMany({ where: { doctorId: user.doctor.id }, orderBy: { scheduledAt: "asc" }, include: { patient: { select: { id: true, firstName: true, lastName: true, country: true } }, medicalIntake: { select: { status: true, reasonForVisit: true, symptoms: true, allergies: true, medications: true } }, consultation: { select: { id: true, status: true, startedAt: true, endedAt: true, summary: true } }, documents: { select: { id: true, originalFileName: true, contentType: true, sizeBytes: true, createdAt: true }, orderBy: { createdAt: "desc" }, take: 50 } } });
+    return prisma.appointment.findMany({
+      where: { doctorId: user.doctor.id },
+      orderBy: { scheduledAt: "asc" },
+      include: {
+        patient: { select: { id: true, firstName: true, lastName: true, country: true } },
+        medicalIntake: { select: { status: true, reasonForVisit: true, symptoms: true, allergies: true, medications: true } },
+        consultation: { select: { id: true, status: true, startedAt: true, endedAt: true, summary: true } },
+        documents: { select: { id: true, originalFileName: true, contentType: true, sizeBytes: true, createdAt: true }, orderBy: { createdAt: "desc" }, take: 50 },
+      },
+    });
   });
 
   app.put("/v1/doctor/appointments/:appointmentId/consultation", async (request, reply) => {
-    const user = await requireDoctor(request, reply); if (!user?.doctor) return;
-    const { appointmentId } = z.object({ appointmentId: z.string().min(1) }).parse(request.params); const input = consultationPayload.parse(request.body);
-    const appointment = await prisma.appointment.findFirst({ where: { id: appointmentId, doctorId: user.doctor.id } }); if (!appointment) return reply.code(404).send({ error: "Appointment not found" });
-    const now = new Date(); const consultation = await prisma.consultation.upsert({ where: { appointmentId }, update: { status: input.status, summary: input.summary, startedAt: input.status === "IN_PROGRESS" ? now : undefined, endedAt: input.status === "COMPLETED" ? now : undefined }, create: { appointmentId, patientId: appointment.patientId, doctorId: appointment.doctorId, status: input.status, summary: input.summary, startedAt: input.status === "IN_PROGRESS" ? now : null, endedAt: input.status === "COMPLETED" ? now : null } });
+    const user = await requireDoctor(request, reply);
+    if (!user?.doctor) return;
+    const { appointmentId } = z.object({ appointmentId: z.string().min(1) }).parse(request.params);
+    const input = consultationPayload.parse(request.body);
+    const appointment = await prisma.appointment.findFirst({ where: { id: appointmentId, doctorId: user.doctor.id } });
+    if (!appointment) return reply.code(404).send({ error: "Appointment not found" });
+
+    const now = new Date();
+    const consultation = await prisma.consultation.upsert({
+      where: { appointmentId },
+      update: {
+        status: input.status,
+        summary: input.summary,
+        startedAt: input.status === "IN_PROGRESS" ? now : undefined,
+        endedAt: input.status === "COMPLETED" ? now : undefined,
+      },
+      create: {
+        appointmentId,
+        patientId: appointment.patientId,
+        doctorId: appointment.doctorId,
+        status: input.status,
+        summary: input.summary,
+        startedAt: input.status === "IN_PROGRESS" ? now : null,
+        endedAt: input.status === "COMPLETED" ? now : null,
+      },
+    });
+
     await recordAudit(request, { actorUserId: user.id, action: "CLINICAL_CONSULTATION_STATUS", resourceType: "Consultation", resourceId: consultation.id, outcome: "SUCCESS", metadata: { status: input.status } });
+
+    if (input.status === "COMPLETED") {
+      await notifyPatient(
+        appointment.patientId,
+        "CONSULTATION",
+        "Consultation completed",
+        "Your specialist consultation is complete. Review your consultation summary and any follow-up recommendations."
+      );
+    }
+
     return consultation;
   });
 
   app.put("/v1/doctor/consultations/:consultationId/note", async (request, reply) => {
-    const user = await requireDoctor(request, reply); if (!user?.doctor) return;
-    const { consultationId } = z.object({ consultationId: z.string().min(1) }).parse(request.params); const input = notePayload.parse(request.body);
-    const consultation = await prisma.consultation.findFirst({ where: { id: consultationId, doctorId: user.doctor.id } }); if (!consultation) return reply.code(404).send({ error: "Consultation not found" });
+    const user = await requireDoctor(request, reply);
+    if (!user?.doctor) return;
+    const { consultationId } = z.object({ consultationId: z.string().min(1) }).parse(request.params);
+    const input = notePayload.parse(request.body);
+    const consultation = await prisma.consultation.findFirst({ where: { id: consultationId, doctorId: user.doctor.id } });
+    if (!consultation) return reply.code(404).send({ error: "Consultation not found" });
     const note = await prisma.clinicalNote.create({ data: { consultationId, ...input } });
     await recordAudit(request, { actorUserId: user.id, action: "CLINICAL_NOTE_CREATED", resourceType: "ClinicalNote", resourceId: note.id, outcome: "SUCCESS" });
     return note;
   });
 
   app.put("/v1/doctor/consultations/:consultationId/prescription", async (request, reply) => {
-    const user = await requireDoctor(request, reply); if (!user?.doctor) return;
-    const { consultationId } = z.object({ consultationId: z.string().min(1) }).parse(request.params); const input = prescriptionPayload.parse(request.body);
-    const consultation = await prisma.consultation.findFirst({ where: { id: consultationId, doctorId: user.doctor.id } }); if (!consultation) return reply.code(404).send({ error: "Consultation not found" });
-    const prescription = await prisma.$transaction(async tx => { await tx.prescriptionItem.deleteMany({ where: { prescription: { consultationId } } }); return tx.prescription.upsert({ where: { consultationId }, update: { instructions: input.instructions, items: { create: input.items } }, create: { consultationId, instructions: input.instructions, items: { create: input.items } }, include: { items: true } }); });
+    const user = await requireDoctor(request, reply);
+    if (!user?.doctor) return;
+    const { consultationId } = z.object({ consultationId: z.string().min(1) }).parse(request.params);
+    const input = prescriptionPayload.parse(request.body);
+    const consultation = await prisma.consultation.findFirst({ where: { id: consultationId, doctorId: user.doctor.id } });
+    if (!consultation) return reply.code(404).send({ error: "Consultation not found" });
+    const prescription = await prisma.$transaction(async tx => {
+      await tx.prescriptionItem.deleteMany({ where: { prescription: { consultationId } } });
+      return tx.prescription.upsert({ where: { consultationId }, update: { instructions: input.instructions, items: { create: input.items } }, create: { consultationId, instructions: input.instructions, items: { create: input.items } }, include: { items: true } });
+    });
     await recordAudit(request, { actorUserId: user.id, action: "CLINICAL_PRESCRIPTION_SAVED", resourceType: "Prescription", resourceId: prescription.id, outcome: "SUCCESS" });
+    await notifyPatient(consultation.patientId, "PRESCRIPTION", "Prescription available", "Your specialist has added or updated a prescription. Review it in your CareBridge records.");
     return prescription;
   });
 
   app.post("/v1/doctor/consultations/:consultationId/follow-up", async (request, reply) => {
-    const user = await requireDoctor(request, reply); if (!user?.doctor) return;
-    const { consultationId } = z.object({ consultationId: z.string().min(1) }).parse(request.params); const input = followUpPayload.parse(request.body);
-    const consultation = await prisma.consultation.findFirst({ where: { id: consultationId, doctorId: user.doctor.id } }); if (!consultation) return reply.code(404).send({ error: "Consultation not found" });
+    const user = await requireDoctor(request, reply);
+    if (!user?.doctor) return;
+    const { consultationId } = z.object({ consultationId: z.string().min(1) }).parse(request.params);
+    const input = followUpPayload.parse(request.body);
+    const consultation = await prisma.consultation.findFirst({ where: { id: consultationId, doctorId: user.doctor.id } });
+    if (!consultation) return reply.code(404).send({ error: "Consultation not found" });
     const followUp = await prisma.followUp.create({ data: { consultationId, ...input } });
     await recordAudit(request, { actorUserId: user.id, action: "CLINICAL_FOLLOWUP_CREATED", resourceType: "FollowUp", resourceId: followUp.id, outcome: "SUCCESS" });
+    await notifyPatient(consultation.patientId, "FOLLOW_UP", "Follow-up recommendation", input.instructions ?? "Your specialist has added a follow-up recommendation.");
     return followUp;
   });
 }
