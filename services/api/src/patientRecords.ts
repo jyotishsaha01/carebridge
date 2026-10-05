@@ -5,6 +5,28 @@ import { prisma } from "./server";
 import { recordAudit } from "./audit";
 
 export async function registerPatientRecordsRoutes(app: FastifyInstance) {
+
+  app.get("/v1/patient/profile", async (request, reply) => {
+    const user = await getAuthenticatedUser(request);
+    if (!user?.patient) return reply.code(401).send({ error: "Patient authentication required" });
+    const profile = await prisma.patient.findUnique({ where: { id: user.patient.id }, include: { user: { select: { email: true } } } });
+    return profile;
+  });
+
+  app.patch("/v1/patient/profile", async (request, reply) => {
+    const user = await getAuthenticatedUser(request);
+    if (!user?.patient) return reply.code(401).send({ error: "Patient authentication required" });
+    const input = z.object({
+      firstName: z.string().trim().max(100).nullable().optional(),
+      lastName: z.string().trim().max(100).nullable().optional(),
+      country: z.string().trim().length(2).optional(),
+    }).parse(request.body);
+    const profile = await prisma.patient.update({ where: { id: user.patient.id }, data: input, include: { user: { select: { email: true } } } });
+    await recordAudit(request, { actorUserId: user.id, action: "PATIENT_PROFILE_UPDATED", resourceType: "Patient", resourceId: profile.id, outcome: "SUCCESS" });
+    return profile;
+  });
+
+
   app.get("/v1/patient/records", async (request, reply) => {
     const user = await getAuthenticatedUser(request);
     if (!user?.patient) return reply.code(401).send({ error: "Patient authentication required" });
