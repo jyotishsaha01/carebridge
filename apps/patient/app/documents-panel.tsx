@@ -24,6 +24,7 @@ export default function DocumentsPanel() {
     const response = await fetch(`${API_URL}/v1/documents`,{credentials:"include"});
     if(response.ok) setDocuments(await response.json());
   }
+  // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(()=>{void load();},[]);
   async function upload(file:File){
     if(!allowedTypes.includes(file.type))return setMessage("For now, use PDF, JPG or PNG files.");
