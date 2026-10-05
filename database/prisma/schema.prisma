@@ -98,6 +98,7 @@ model User {
   passwordResetTokens     PasswordResetToken[]
   auditLogs               AuditLog[]
   notifications           Notification[]
+  notificationPreferences NotificationPreference[]
 }
 
 model Session {
