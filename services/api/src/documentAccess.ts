@@ -22,6 +22,24 @@ export async function registerDocumentAccessRoutes(app: FastifyInstance) {
     return documents;
   });
 
+  app.get("/v1/doctor/documents/:documentId/content", async (request, reply) => {
+    const doctor = await requireRole(request, reply, ["DOCTOR"]);
+    if (!doctor?.doctor) return;
+    const { documentId } = z.object({ documentId: z.string().min(1) }).parse(request.params);
+    const document = await prisma.medicalDocument.findUnique({ where: { id: documentId } });
+    if (!document) return reply.code(404).send({ error: "Document not found" });
+    const relationship = await prisma.appointment.findFirst({ where: { patientId: document.patientId, doctorId: doctor.doctor.id }, select: { id: true } });
+    if (!relationship) return reply.code(403).send({ error: "Doctor is not authorized for this document" });
+    try {
+      const { readDocument } = await import("./documentStoragePrototype");
+      const content = await readDocument(document.storageKey);
+      await recordAudit(request, { actorUserId: doctor.id, action: "DOCTOR_DOCUMENT_CONTENT_VIEWED", resourceType: "MedicalDocument", resourceId: documentId, outcome: "SUCCESS" });
+      return { contentBase64: content.toString("base64"), contentType: document.contentType, originalFileName: document.originalFileName };
+    } catch {
+      return reply.code(404).send({ error: "Document content is not available" });
+    }
+  });
+
   app.get("/v1/doctor/documents/:documentId", async (request, reply) => {
     const doctor = await requireRole(request, reply, ["DOCTOR"]);
     if (!doctor?.doctor) return;
