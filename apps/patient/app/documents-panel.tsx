@@ -46,7 +46,8 @@ export default function DocumentsPanel() {
     const response=await fetch(`${API_URL}/v1/documents/${id}`,{credentials:"include"});
     if(!response.ok){setMessage("Unable to open this document.");return;}
     const data=await response.json();
-    setMessage(data.access?.mode==="provider-adapter-pending"?"Document is stored locally for development; cloud signed access is a production release gate.":"Document access ready.");
+    const contentResponse=await fetch(`${API_URL}/v1/documents/${id}/content`,{credentials:"include"});
+    if(contentResponse.ok){const content=await contentResponse.json();const bytes=Uint8Array.from(atob(content.contentBase64),(char)=>char.charCodeAt(0));const url=URL.createObjectURL(new Blob([bytes],{type:content.contentType}));window.open(url,"_blank","noopener,noreferrer");setTimeout(()=>URL.revokeObjectURL(url),60000);setMessage("Document opened in a secure local development view.");}else setMessage(data.access?.mode==="provider-adapter-pending"?"Document is stored locally for development; cloud signed access is a production release gate.":"Document access ready.");
   }
   return <section id="documents" className="documents-section content-section">
     <div className="section-heading"><div><div className="eyebrow">SECURE DOCUMENTS</div><h2>Bring the right records to your consultation.</h2></div><p>Share relevant reports, scans and previous records without emailing sensitive files around.</p></div>
