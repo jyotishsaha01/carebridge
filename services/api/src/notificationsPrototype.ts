@@ -40,8 +40,8 @@ export async function createNotification(input:{userId:string;role:NotificationR
 }
 
 export async function listNotifications(userId:string,limit=100){
-  const rows = await prisma.notification.findMany({where:{userId},orderBy:{createdAt:"desc"},take:Math.min(limit,100)});
-  return rows.map(item=>({id:item.id,userId:item.userId,role:"PATIENT" as NotificationRole,type:apiType(item.type,item.title),title:item.title,body:item.body,status:item.status,createdAt:item.createdAt.toISOString(),readAt:item.readAt?.toISOString()}));
+  const rows = await prisma.notification.findMany({where:{userId},include:{user:true},orderBy:{createdAt:"desc"},take:Math.min(limit,100)});
+  return rows.map(item=>({id:item.id,userId:item.userId,role:item.user.role as NotificationRole,type:apiType(item.type,item.title),title:item.title,body:item.body,status:item.status,createdAt:item.createdAt.toISOString(),readAt:item.readAt?.toISOString()}));
 }
 
 export async function unreadCount(userId:string){ return prisma.notification.count({where:{userId,status:"UNREAD"}}); }
@@ -49,8 +49,8 @@ export async function unreadCount(userId:string){ return prisma.notification.cou
 export async function markNotificationRead(userId:string,id:string){
   const item = await prisma.notification.findFirst({where:{id,userId}});
   if(!item) return null;
-  const updated = await prisma.notification.update({where:{id},data:{status:"READ",readAt:new Date()}});
-  return {id:updated.id,userId:updated.userId,role:"PATIENT" as NotificationRole,type:apiType(updated.type,updated.title),title:updated.title,body:updated.body,status:updated.status,createdAt:updated.createdAt.toISOString(),readAt:updated.readAt?.toISOString()};
+  const updated = await prisma.notification.update({where:{id},include:{user:true},data:{status:"READ",readAt:new Date()}});
+  return {id:updated.id,userId:updated.userId,role:updated.user.role as NotificationRole,type:apiType(updated.type,updated.title),title:updated.title,body:updated.body,status:updated.status,createdAt:updated.createdAt.toISOString(),readAt:updated.readAt?.toISOString()};
 }
 
 export async function markAllNotificationsRead(userId:string){
