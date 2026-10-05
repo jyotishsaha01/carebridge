@@ -12,7 +12,7 @@
     "db:push": "prisma db push --schema ../../database/prisma/schema.prisma",
     "db:setup": "prisma db push --schema ../../database/prisma/schema.prisma && tsx ../../database/prisma/seed.ts",
     "db:reset": "prisma db push --force-reset --schema ../../database/prisma/schema.prisma && tsx ../../database/prisma/seed.ts",
-    "uat:integration": "tsx src/uat.integration.ts"
+    "uat:integration": "tsx src/uatSmoke.ts"
   },
   "dependencies": {
     "@fastify/cors": "latest",
