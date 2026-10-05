@@ -7,88 +7,13 @@ datasource db {
   url      = "file:./dev.db"
 }
 
-enum DoctorStatus {
-  PENDING
-  VERIFIED
-  SUSPENDED
-}
-enum UserRole {
-  PATIENT
-  DOCTOR
-  ADMIN
-}
-enum SlotStatus {
-  AVAILABLE
-  BOOKED
-  BLOCKED
-}
-enum IntakeStatus {
-  DRAFT
-  COMPLETED
-}
-enum ConsultationStatus {
-  SCHEDULED
-  IN_PROGRESS
-  COMPLETED
-  CANCELLED
-}
-enum FollowUpStatus {
-  RECOMMENDED
-  SCHEDULED
-  COMPLETED
-  CANCELLED
-}
-enum NotificationType {
-  APPOINTMENT
-  CLINICAL
-  DOCUMENT
-  PAYMENT
-  SECURITY
-  SYSTEM
-}
-enum NotificationChannel {
-  IN_APP
-  EMAIL
-  SMS
-}
-enum NotificationStatus {
-  UNREAD
-  READ
-}
-enum CarePlanStatus {
-  DRAFT
-  ACTIVE
-  COMPLETED
-  CANCELLED
-}
-enum CareTaskStatus {
-  TODO
-  IN_PROGRESS
-  DONE
-  SKIPPED
-}
-enum CareRequestType {
-  DIAGNOSTIC
-  PROCEDURE
-  SURGERY
-  MEDICATION
-  COORDINATION
-}
-enum CareRequestStatus {
-  REQUESTED
-  REVIEWING
-  APPROVED
-  SCHEDULED
-  COMPLETED
-  CANCELLED
-}
 
 model User {
   id                      String                    @id @default(cuid())
   email                   String                    @unique
   passwordHash            String?
   emailVerifiedAt         DateTime?
-  role                    UserRole
+  role                    String
   createdAt               DateTime                  @default(now())
   updatedAt               DateTime                  @updatedAt
   patient                 Patient?
@@ -160,9 +85,9 @@ model AuditLog {
 model Notification {
   id        String               @id @default(cuid())
   userId    String
-  type      NotificationType
-  channel   NotificationChannel @default(IN_APP)
-  status    NotificationStatus  @default(UNREAD)
+  type      String
+  channel   String @default(IN_APP)
+  status    String  @default(UNREAD)
   title     String
   body      String
   metadata  Json?
@@ -209,7 +134,7 @@ model Doctor {
   consultationPriceUsd Float
   expertise Json
   bio String
-  status DoctorStatus @default(PENDING)
+  status String @default(PENDING)
   isVerified Boolean @default(false)
   isActive Boolean @default(true)
   createdAt DateTime @default(now())
@@ -240,7 +165,7 @@ model AvailabilitySlot {
   doctorId String
   startsAt DateTime
   endsAt DateTime
-  status SlotStatus @default(AVAILABLE)
+  status String @default(AVAILABLE)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
   doctor Doctor @relation(fields: [doctorId], references: [id], onDelete: Cascade)
@@ -279,7 +204,7 @@ model MedicalIntake {
   familyHistory String?
   consentToConsult Boolean @default(false)
   consentedAt DateTime?
-  status IntakeStatus @default(DRAFT)
+  status String @default(DRAFT)
   completedAt DateTime?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -308,7 +233,7 @@ model Consultation {
   appointmentId String @unique
   patientId String
   doctorId String
-  status ConsultationStatus @default(SCHEDULED)
+  status String @default(SCHEDULED)
   startedAt DateTime?
   endedAt DateTime?
   summary String?
@@ -367,7 +292,7 @@ model FollowUp {
   consultationId String
   dueAt DateTime?
   instructions String?
-  status FollowUpStatus @default(RECOMMENDED)
+  status String @default(RECOMMENDED)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
   consultation Consultation @relation(fields: [consultationId], references: [id], onDelete: Cascade)
@@ -379,7 +304,7 @@ model CarePlan {
   patientId String
   title String
   description String?
-  status CarePlanStatus @default(DRAFT)
+  status String @default(DRAFT)
   coordinatorNote String?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -394,7 +319,7 @@ model CarePlanTask {
   title String
   description String?
   dueAt DateTime?
-  status CareTaskStatus @default(TODO)
+  status String @default(TODO)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
   carePlan CarePlan @relation(fields: [carePlanId], references: [id], onDelete: Cascade)
@@ -404,8 +329,8 @@ model CarePlanTask {
 model CareRequest {
   id String @id @default(cuid())
   patientId String
-  type CareRequestType
-  status CareRequestStatus @default(REQUESTED)
+  type String
+  status String @default(REQUESTED)
   title String
   description String?
   country String?
@@ -417,11 +342,6 @@ model CareRequest {
 }
 
 
-enum CredentialStatus {
-  PENDING
-  APPROVED
-  REJECTED
-}
 
 model DoctorCredential {
   id               String           @id @default(cuid())
@@ -431,7 +351,7 @@ model DoctorCredential {
   jurisdiction     String
   documentName     String?
   storageKey       String?
-  status           CredentialStatus @default(PENDING)
+  status           String @default(PENDING)
   reviewedAt       DateTime?
   reviewedByUserId String?
   createdAt        DateTime         @default(now())
@@ -442,19 +362,13 @@ model DoctorCredential {
   @@index([reviewedByUserId, reviewedAt])
 }
 
-enum SupportTicketStatus {
-  OPEN
-  IN_PROGRESS
-  RESOLVED
-  CLOSED
-}
 
 model SupportTicket {
   id         String              @id @default(cuid())
   userId     String
   category   String
   message    String
-  status     SupportTicketStatus @default(OPEN)
+  status     String @default(OPEN)
   createdAt  DateTime            @default(now())
   updatedAt  DateTime            @updatedAt
   resolvedAt DateTime?
