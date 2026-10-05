@@ -153,6 +153,13 @@ async function main() {
     }
   }
 
+  const adminEmail = "demo-admin@demo.carebridge.local";
+  await prisma.user.upsert({
+    where: { email: adminEmail },
+    update: { role: "ADMIN" },
+    create: { email: adminEmail, role: "ADMIN" },
+  });
+
   const patientEmail = "demo-patient@demo.carebridge.local";
   const patientUser = await prisma.user.upsert({
     where: { email: patientEmail },
