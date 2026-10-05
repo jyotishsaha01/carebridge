@@ -60,7 +60,7 @@ export default function Operations() {
     }
   }
 
-  function patientName(patient: AdminPatient) {
+  function patientName(patient: Pick<AdminPatient, "firstName" | "lastName">) {
     return [patient.firstName, patient.lastName].filter(Boolean).join(" ") || "Patient";
   }
 
