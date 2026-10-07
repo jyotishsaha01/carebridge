@@ -12,6 +12,7 @@ import {
   type NotificationType,
 } from "./notificationsPrototype";
 import { requireRole } from "./auth";
+import { subscribeNotifications } from "./notificationRealtime";
 
 const allowedRoles = ["PATIENT", "DOCTOR", "ADMIN"] as const;
 const notificationTypes = ["CONSULTATION", "PRESCRIPTION", "FOLLOW_UP", "CARE_PLAN", "DOCUMENT", "SUPPORT", "SYSTEM"] as const;
@@ -26,6 +27,30 @@ export async function registerNotificationPrototypeRoutes(app: FastifyInstance) 
   };
 
   app.get("/v1/notifications", list);
+
+  app.get("/v1/notifications/stream", async (request, reply) => {
+    const user = await requireRole(request, reply, [...allowedRoles]);
+    if (!user) return;
+    const raw = reply.raw;
+    raw.writeHead(200, {
+      "Content-Type": "text/event-stream; charset=utf-8",
+      "Cache-Control": "no-cache, no-transform",
+      "Connection": "keep-alive",
+      "X-Accel-Buffering": "no",
+      "Access-Control-Allow-Origin": request.headers.origin ?? "*",
+      "Access-Control-Allow-Credentials": "true",
+    });
+    raw.write(`event: ready\\ndata: ${JSON.stringify({ connected: true })}\\n\\n`);
+    const unsubscribe = subscribeNotifications(user.id, (notification) => {
+      raw.write(`event: notification\\ndata: ${JSON.stringify(notification)}\\n\\n`);
+    });
+    const heartbeat = setInterval(() => raw.write(`: heartbeat\\n\\n`), 25000);
+    request.raw.on("close", () => {
+      clearInterval(heartbeat);
+      unsubscribe();
+    });
+    await new Promise<void>((resolve) => request.raw.on("close", () => resolve()));
+  });
   app.get("/v1/prototype/notifications", list);
 
   const markRead = async (request: FastifyRequest, reply: FastifyReply) => {
