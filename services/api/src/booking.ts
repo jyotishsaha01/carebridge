@@ -3,7 +3,7 @@ import type { FastifyInstance } from "fastify";
 import { prisma } from "./server";
 import { requireRole } from "./auth";
 import { recordAudit } from "./audit";
-import { createNotification } from "./notificationsPrototype";
+import { createNotification, notifyUsersByRole } from "./notificationsPrototype";
 
 const bookingRequest = z.object({
   doctorSlug: z.string().min(1),
@@ -88,6 +88,8 @@ export async function registerBookingRoutes(app: FastifyInstance, allowDemoAuth:
         title: "Appointment confirmed",
         body: "Your consultation with " + doctor.name + " is scheduled for " + appointment.scheduledAt.toISOString() + ".",
       });
+
+      await notifyUsersByRole("ADMIN", "CONSULTATION", "New appointment booked", "A patient has booked a new consultation with " + doctor.name + ".");
 
       if (doctorUser) {
         await createNotification({
