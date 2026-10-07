@@ -3,6 +3,7 @@ import { z } from "zod";
 import { prisma } from "./server";
 import { getAuthenticatedUser, requireRole } from "./auth";
 import { recordAudit } from "./audit";
+import { createNotification, notifyUsersByRole } from "./notificationsPrototype";
 
 const notificationQuery = z.object({ limit: z.coerce.number().int().min(1).max(100).default(50), unreadOnly: z.enum(["true", "false"]).default("false") });
 const taskStatus = z.enum(["TODO", "IN_PROGRESS", "DONE", "SKIPPED"]);
@@ -64,7 +65,8 @@ export async function registerCarePlatformRoutes(app: FastifyInstance) {
     if (!user?.patient) return;
     const input = z.object({ type: z.enum(["DIAGNOSTIC", "PROCEDURE", "SURGERY", "MEDICATION", "COORDINATION"]), title: z.string().trim().min(3).max(160), description: z.string().trim().max(2000).optional(), country: z.string().trim().max(80).optional(), targetDate: z.coerce.date().optional() }).parse(request.body);
     const requestRecord = await prisma.careRequest.create({ data: { patientId: user.patient.id, ...input } });
-    await prisma.notification.create({ data: { userId: user.id, type: "SYSTEM", title: "Care request received", body: `Your ${input.type.toLowerCase()} request has been received and will be reviewed by CareBridge.`, metadata: { careRequestId: requestRecord.id } } });
+    await createNotification({ userId: user.id, role: "PATIENT", type: "SYSTEM", title: "Care request received", body: `Your ${input.type.toLowerCase()} request has been received and will be reviewed by CareBridge.` });
+    await notifyUsersByRole("ADMIN", "SYSTEM", "New care request", `A patient submitted a new ${input.type.toLowerCase()} care request.`);
     await recordAudit(request, { actorUserId: user.id, action: "CARE_REQUEST_CREATED", resourceType: "CareRequest", resourceId: requestRecord.id, outcome: "SUCCESS", metadata: { type: input.type } });
     return reply.code(201).send(requestRecord);
   });
@@ -89,7 +91,7 @@ export async function registerCarePlatformRoutes(app: FastifyInstance) {
     const input = z.object({ status: z.enum(["REQUESTED", "REVIEWING", "APPROVED", "SCHEDULED", "COMPLETED", "CANCELLED"]), targetDate: z.coerce.date().nullable().optional() }).parse(request.body);
     const updated = await prisma.careRequest.update({ where: { id: requestId }, data: input });
     const patient = await prisma.patient.findUnique({ where: { id: updated.patientId }, select: { userId: true } });
-    if (patient) await prisma.notification.create({ data: { userId: patient.userId, type: "SYSTEM", title: "Care request updated", body: `Your care request is now ${updated.status.toLowerCase().replaceAll("_", " ")}.`, metadata: { careRequestId: updated.id } } });
+    if (patient) await createNotification({ userId: patient.userId, role: "PATIENT", type: "SYSTEM", title: "Care request updated", body: `Your care request is now ${updated.status.toLowerCase().replaceAll("_", " ")}.` });
     await recordAudit(request, { actorUserId: user.id, action: "CARE_REQUEST_UPDATED", resourceType: "CareRequest", resourceId: updated.id, outcome: "SUCCESS", metadata: { status: updated.status } });
     return updated;
   });
@@ -100,7 +102,7 @@ export async function registerCarePlatformRoutes(app: FastifyInstance) {
     const input = z.object({ patientId: z.string().min(1), title: z.string().trim().min(3).max(160), description: z.string().trim().max(2000).optional(), coordinatorNote: z.string().trim().max(4000).optional(), tasks: z.array(z.object({ title: z.string().trim().min(2).max(160), description: z.string().trim().max(1000).optional(), dueAt: z.coerce.date().optional() })).max(50).default([]) }).parse(request.body);
     const plan = await prisma.carePlan.create({ data: { patientId: input.patientId, title: input.title, description: input.description, coordinatorNote: input.coordinatorNote, status: "ACTIVE", tasks: { create: input.tasks } }, include: { tasks: true } });
     const patient = await prisma.patient.findUnique({ where: { id: input.patientId }, select: { userId: true } });
-    if (patient) await prisma.notification.create({ data: { userId: patient.userId, type: "CLINICAL", title: "Your care plan is ready", body: `A new care plan, “${plan.title}”, is available in your CareBridge dashboard.`, metadata: { carePlanId: plan.id } } });
+    if (patient) await createNotification({ userId: patient.userId, role: "PATIENT", type: "CARE_PLAN", title: "Your care plan is ready", body: `A new care plan, “${plan.title}”, is available in your CareBridge dashboard.` });
     await recordAudit(request, { actorUserId: user.id, action: "CARE_PLAN_CREATED", resourceType: "CarePlan", resourceId: plan.id, outcome: "SUCCESS", metadata: { patientId: input.patientId } });
     return reply.code(201).send(plan);
   });
