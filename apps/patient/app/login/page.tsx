@@ -22,8 +22,7 @@ export default function LoginPage() {
       if (mode === "signup") {
         const result = await signUp(email, password);
         if (result.emailVerificationRequired) {
-          const suffix = result.devVerificationToken ? ` Development verification token: ${result.devVerificationToken}` : " Check your email for the verification link.";
-          setMessage(`Account created.${suffix}`);
+          setMessage("Account created. Check your email for the verification link.");
           return;
         }
         setMessage(`Welcome to CareBridge. Signed in as ${result.user.email}.`);
