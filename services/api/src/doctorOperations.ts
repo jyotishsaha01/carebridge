@@ -3,6 +3,7 @@ import { z } from "zod";
 import { prisma } from "./server";
 import { requireRole } from "./auth";
 import { recordAudit } from "./audit";
+import { notifyUsersByRole, createNotification } from "./notificationsPrototype";
 
 const slotInput = z.object({ startsAt: z.coerce.date(), endsAt: z.coerce.date() }).refine((v) => v.endsAt > v.startsAt, { message: "endsAt must be after startsAt" });
 
@@ -59,7 +60,7 @@ export async function registerDoctorOperationsRoutes(app: FastifyInstance) {
       documentName: z.string().trim().max(200).optional(),
       storageKey: z.string().trim().max(500).optional(),
     }).parse(request.body);
-    const credential = await prisma.doctorCredential.create({ data: { doctorId: user.doctor.id, ...input } });
+    const credential = await prisma.doctorCredential.create({ data: { doctorId: user.doctor.id, ...input } });\n    await notifyUsersByRole("ADMIN", "DOCUMENT", "Doctor credential submitted", `${user.doctor.name ?? "A doctor"} submitted a credential for review.`);
     await recordAudit(request, { actorUserId: user.id, action: "DOCTOR_CREDENTIAL_SUBMITTED", resourceType: "DoctorCredential", resourceId: credential.id, outcome: "SUCCESS" });
     return reply.code(201).send(credential);
   });
