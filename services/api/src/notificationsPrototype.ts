@@ -1,4 +1,5 @@
 import { prisma } from "./server";
+import { publishNotification } from "./notificationRealtime";
 
 export type NotificationRole = "PATIENT" | "DOCTOR" | "ADMIN";
 export type NotificationType = "CONSULTATION" | "PRESCRIPTION" | "FOLLOW_UP" | "CARE_PLAN" | "DOCUMENT" | "SUPPORT" | "SYSTEM";
@@ -36,7 +37,9 @@ export async function createNotification(input:{userId:string;role:NotificationR
   const preferences = await getNotificationPreferences(input.userId);
   if (!preferences[input.type]) return null;
   const item = await prisma.notification.create({data:{userId:input.userId,type:dbType(input.type) as never,title:input.title,body:input.body,status:"UNREAD"}});
-  return {id:item.id,userId:item.userId,role:input.role,type:input.type,title:item.title,body:item.body,status:item.status,createdAt:item.createdAt.toISOString(),readAt:item.readAt?.toISOString()};
+  const notification = {id:item.id,userId:item.userId,role:input.role,type:input.type,title:item.title,body:item.body,status:item.status,createdAt:item.createdAt.toISOString(),readAt:item.readAt?.toISOString()};
+  publishNotification(input.userId, notification);
+  return notification;
 }
 
 export async function listNotifications(userId:string,limit=100){
