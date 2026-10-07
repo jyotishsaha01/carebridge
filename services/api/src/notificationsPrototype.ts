@@ -42,6 +42,13 @@ export async function createNotification(input:{userId:string;role:NotificationR
   return notification;
 }
 
+export async function notifyUsersByRole(role: NotificationRole, type: NotificationType, title: string, body: string) {
+  const users = await prisma.user.findMany({ where: { role }, select: { id: true } });
+  for (const user of users) {
+    await createNotification({ userId: user.id, role, type, title, body });
+  }
+}
+
 export async function listNotifications(userId:string,limit=100){
   const rows = await prisma.notification.findMany({where:{userId},include:{user:true},orderBy:{createdAt:"desc"},take:Math.min(limit,100)});
   return rows.map(item=>({id:item.id,userId:item.userId,role:item.user.role as NotificationRole,type:apiType(item.type,item.title),title:item.title,body:item.body,status:item.status,createdAt:item.createdAt.toISOString(),readAt:item.readAt?.toISOString()}));
