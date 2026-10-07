@@ -2,8 +2,8 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "CareBridge — Global Healthcare. Trusted Care. Smarter Costs.",
-  description: "Connect with qualified specialists through convenient virtual consultations with transparent pricing.",
+  title: "CareBridge Doctor Workspace",
+  description: "Clinical workspace for CareBridge healthcare professionals.",
 };
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {

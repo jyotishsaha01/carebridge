@@ -1,0 +1,98 @@
+export type ApiDoctor = {
+  id: string;
+  name: string;
+  initials: string;
+  specialty: string;
+  location: string;
+  rating: number;
+  experience: number;
+  price: number;
+  usLow: number | null;
+  usHigh: number | null;
+  expertise: string[];
+  bio: string;
+  verified: boolean;
+};
+
+export type ApiSlot = {
+  id: string;
+  startsAt: string;
+  endsAt: string;
+  timezone: string;
+};
+
+export type AuthUser = {
+  id: string;
+  email: string;
+  role: "PATIENT" | "DOCTOR" | "ADMIN";
+  patientId?: string | null;
+  doctorId?: string | null;
+};
+
+const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
+
+async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
+  const response = await fetch(`${API_URL}${path}`, {
+    ...init,
+    cache: "no-store",
+    credentials: "include",
+  });
+  if (!response.ok) {
+    const body = await response.json().catch(() => null) as { error?: string } | null;
+    throw new Error(body?.error ?? `CareBridge API request failed: ${response.status}`);
+  }
+  return response.json() as Promise<T>;
+}
+
+export function getSpecialties() { return apiFetch<Array<{ id: string; name: string }>>("/v1/specialties"); }
+export function getDoctors(params: { specialty?: string; q?: string } = {}) {
+  const search = new URLSearchParams();
+  if (params.specialty && params.specialty !== "All specialties") search.set("specialty", params.specialty);
+  if (params.q) search.set("q", params.q);
+  const suffix = search.toString() ? `?${search.toString()}` : "";
+  return apiFetch<ApiDoctor[]>(`/v1/doctors${suffix}`);
+}
+export function getDoctor(slug: string) {
+  return apiFetch<ApiDoctor & { costComparison: { patientCountry: string; comparableLowUsd: number; comparableHighUsd: number; sourceLabel: string; disclaimer: string } | null }>(`/v1/doctors/${slug}`);
+}
+export function getAvailability(slug: string, from: Date, to: Date) {
+  const search = new URLSearchParams({ from: from.toISOString(), to: to.toISOString() });
+  return apiFetch<ApiSlot[]>(`/v1/doctors/${slug}/availability?${search.toString()}`);
+}
+export function bookAppointment(doctorSlug: string, scheduledAt: string) {
+  return apiFetch<{ id: string; scheduledAt: string; durationMin: number; status: string }>("/v1/appointments", {
+    method: "POST",
+    headers: { "content-type": "application/json", "x-demo-patient-email": "demo-patient@demo.carebridge.local" },
+    body: JSON.stringify({ doctorSlug, scheduledAt, durationMin: 30 }),
+  });
+}
+export function signIn(email: string, password: string) { return apiFetch<{ user: AuthUser; emailVerified?: boolean }>("/v1/auth/login", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ email, password }) }); }
+export function signUp(email: string, password: string) { return apiFetch<{ user: AuthUser; emailVerificationRequired: boolean; devVerificationToken?: string }>("/v1/auth/signup", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ email, password }) }); }
+export function verifyEmail(token: string) { return apiFetch<{ ok: true }>("/v1/auth/verify-email", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ token }) }); }
+export function resendVerification(email: string) { return apiFetch<{ accepted: true; message: string; devVerificationToken?: string }>("/v1/auth/resend-verification", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ email }) }); }
+export function requestPasswordReset(email: string) { return apiFetch<{ accepted: true; message: string; devResetToken?: string }>("/v1/auth/request-password-reset", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ email }) }); }
+export function resetPassword(token: string, password: string) { return apiFetch<{ ok: true }>("/v1/auth/reset-password", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ token, password }) }); }
+export function getCurrentUser() { return apiFetch<{ user: AuthUser; emailVerified?: boolean }>("/v1/auth/me"); }
+export function getSessions() { return apiFetch<{ sessions: Array<{ id: string; createdAt: string; lastSeenAt: string; expiresAt: string; current: boolean }> }>("/v1/auth/sessions"); }
+export function revokeSession(sessionId: string) { return apiFetch<{ ok: true }>(`/v1/auth/sessions/${sessionId}/revoke`, { method: "POST" }); }
+export function signOut() { return apiFetch<{ ok: true }>("/v1/auth/logout", { method: "POST" }); }
+
+export type PaymentSummary = {
+  id: string;
+  appointmentId: string;
+  amountMinor: number;
+  currency: string;
+  status: "PENDING" | "REQUIRES_ACTION" | "SUCCEEDED" | "FAILED" | "CANCELLED" | "REFUNDED";
+  provider: string;
+  checkoutUrl?: string;
+  scheduledAt?: string;
+  doctorName?: string;
+  doctorSlug?: string;
+};
+
+export function createPaymentIntent(appointmentId: string) {
+  const idempotencyKey = `patient_${appointmentId}_${crypto.randomUUID()}`;
+  return apiFetch<PaymentSummary>("/v1/payments/intents", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ appointmentId, idempotencyKey }) });
+}
+export function getPayment(appointmentId: string) { return apiFetch<PaymentSummary | null>(`/v1/payments/${encodeURIComponent(appointmentId)}`); }
+export function getPayments() { return apiFetch<PaymentSummary[]>("/v1/payments"); }

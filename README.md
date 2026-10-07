@@ -2,50 +2,77 @@
 
 **Global Healthcare. Trusted Care. Smarter Costs.**
 
-CareBridge is a Phase 1 healthcare platform for US patients seeking affordable specialist consultations through a trusted global provider network.
+CareBridge is a healthcare platform focused on convenient specialist consultations, transparent pricing information, and a structured patient care journey.
 
-## Phase 1 MVP
+## Current build
 
-- Patient application
-- Doctor application
-- Admin console
-- Specialist discovery
-- Transparent consultation cost comparison
-- Appointment booking
-- Secure medical information intake
-- Video consultation
-- Clinician notes and consultation summary
-- Prescriptions/recommendations
-- Follow-up care
-- Messaging and notifications
+Phase 1 is the active product scope. Phase 2 (international treatment exploration/care coordination) and Phase 3 (travel, accommodation and broader ecosystem services) are intentionally parked.
 
-Phase 2 (international treatment coordination) and Phase 3 (full medical travel/long-term care) are intentionally parked.
+The current codebase contains:
 
-## Repository structure
+- Patient application built with Next.js + TypeScript
+- Fastify + TypeScript REST API
+- PostgreSQL + Prisma data layer
+- Synthetic specialist and availability seed data
+- Smart Cost comparison data model and API
+- Local appointment availability and demo reservation flow
+- Patient / Doctor / Admin role model and RBAC foundation
+- Local PostgreSQL Docker Compose setup
 
-```text
-carebridge/
-├── apps/
-│   ├── patient/
-│   ├── doctor/
-│   └── admin/
-├── services/
-│   ├── api/
-│   ├── worker/
-│   └── notifications/
-├── packages/
-│   ├── ui/
-│   ├── types/
-│   ├── validation/
-│   ├── api-client/
-│   └── config/
-├── database/
-├── docs/
-└── infrastructure/
+## Run locally
+
+```bash
+cp .env.example .env
+pnpm install
+
+docker compose up -d postgres
+pnpm --filter @carebridge/database db:generate
+pnpm --filter @carebridge/database db:push
+pnpm --filter @carebridge/database db:seed
 ```
 
-## Current status
+In one terminal:
 
-**v0.2 — Engineering Foundation**
+```bash
+pnpm --filter @carebridge/api dev
+```
 
-The repository is being established incrementally. Real patient data must not be used in development. Healthcare/privacy/licensing/payment requirements must be validated before live use.
+In another:
+
+```bash
+pnpm --filter @carebridge/patient dev
+```
+
+Open `http://localhost:3000` for the Patient app and `http://localhost:4000/health` for the API health check.
+
+## Data safety
+
+Local/test/QA use synthetic data only. The demo booking identity is deliberately not production authentication. Do not add real patient health information or production credentials to this repository.
+
+## Repository layout
+
+```text
+apps/
+  patient/        # Patient experience
+  doctor/         # Doctor workspace (next production increment)
+  admin/          # Admin console (next production increment)
+services/
+  api/            # REST API
+  worker/         # background jobs (future)
+  notifications/  # notification service (future)
+packages/
+  ui/             # shared UI primitives
+  types/          # shared types
+  validation/     # shared validation
+  api-client/     # shared API client
+  config/         # shared configuration
+database/
+  prisma/         # PostgreSQL schema and seed
+docs/
+  backend/        # local backend runbooks
+  security/       # auth/RBAC boundaries
+  project/        # product progress tracking
+infrastructure/   # deployment/infrastructure definitions (future)
+```
+
+See `docs/project/PROGRESS.md` for the implementation tracker.

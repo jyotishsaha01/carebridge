@@ -1,0 +1,92 @@
+name: CareBridge CI
+
+on:
+  pull_request:
+  push:
+    branches: [main, develop, test, qa, 'feature/**']
+
+jobs:
+  foundation-check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.15.0
+          run_install: false
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install dependencies
+        run: pnpm install --no-frozen-lockfile
+      - name: Generate Prisma client
+        run: pnpm --filter @carebridge/database exec prisma generate
+      - name: Lint
+        run: pnpm lint
+      - name: Typecheck
+        run: pnpm typecheck
+      - name: Unit tests
+        run: pnpm test
+      - name: Build
+        run: pnpm build
+
+  uat-integration:
+    needs: foundation-check
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.15.0
+          run_install: false
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install dependencies
+        run: pnpm install --no-frozen-lockfile
+      - name: Create ephemeral UAT credentials
+        run: echo "CAREBRIDGE_UAT_PASSWORD=UAT-$(openssl rand -hex 16)-2026!" >> "$GITHUB_ENV"
+      - name: Prepare synthetic UAT database
+        run: pnpm db:setup
+      - name: Start API
+        env:
+          DATABASE_URL: file:./database/prisma/dev.db
+          ALLOW_DEMO_AUTH: "true"
+          NODE_ENV: test
+        run: |
+          nohup pnpm --filter @carebridge/api dev > /tmp/carebridge-api.log 2>&1 &
+          for i in {1..30}; do
+            curl -fsS http://127.0.0.1:4000/health && break
+            sleep 1
+          done
+      - name: Run cross-role UAT
+        env:
+          API_URL: http://127.0.0.1:4000
+        run: pnpm --filter @carebridge/api uat:integration
+      - name: Upload API log on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: carebridge-api-uat-log
+          path: /tmp/carebridge-api.log
+
+  qa-smoke:
+    needs: [foundation-check, uat-integration]
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/qa' || github.base_ref == 'qa'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: QA environment guard
+        run: |
+          test -f .env.test.example
+          test -f docs/project/TESTING_ENVIRONMENT.md
+          test -f docs/testing/TEST-PLAN.md
+          echo "QA configuration files present; real patient data is prohibited."

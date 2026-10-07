@@ -1,0 +1,12 @@
+import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
+import { z } from "zod";
+import { prisma } from "./server";
+import { requireRole } from "./auth";
+
+const intakePayload = z.object({ reasonForVisit:z.string().trim().max(2000).optional().nullable(), symptoms:z.string().trim().max(5000).optional().nullable(), allergies:z.string().trim().max(3000).optional().nullable(), medications:z.string().trim().max(3000).optional().nullable(), medicalHistory:z.string().trim().max(5000).optional().nullable(), surgeries:z.string().trim().max(3000).optional().nullable(), familyHistory:z.string().trim().max(3000).optional().nullable(), consentToConsult:z.boolean() });
+async function requirePatient(request:FastifyRequest,reply:FastifyReply){const user=await requireRole(request,reply,["PATIENT"]);return user?.patient??null;}
+async function getAuthorizedAppointment(patientId:string,appointmentId:string){return prisma.appointment.findFirst({where:{id:appointmentId,patientId},select:{id:true,patientId:true,doctorId:true,scheduledAt:true,status:true}});}
+export async function registerMedicalIntakeRoutes(app:FastifyInstance){
+ app.get("/v1/appointments/:appointmentId/intake",async(request,reply)=>{const patient=await requirePatient(request,reply);if(!patient)return;const{appointmentId}=z.object({appointmentId:z.string().min(1)}).parse(request.params);const appointment=await getAuthorizedAppointment(patient.id,appointmentId);if(!appointment)return reply.code(404).send({error:"Appointment not found"});const intake=await prisma.medicalIntake.findUnique({where:{appointmentId}});return intake??{appointmentId,status:"DRAFT",consentToConsult:false};});
+ app.put("/v1/appointments/:appointmentId/intake",async(request,reply)=>{const patient=await requirePatient(request,reply);if(!patient)return;const{appointmentId}=z.object({appointmentId:z.string().min(1)}).parse(request.params);const input=intakePayload.parse(request.body);const appointment=await getAuthorizedAppointment(patient.id,appointmentId);if(!appointment)return reply.code(404).send({error:"Appointment not found"});const completed=input.consentToConsult;const now=new Date();return prisma.medicalIntake.upsert({where:{appointmentId},update:{...input,consentedAt:input.consentToConsult?now:null,status:completed?"COMPLETED":"DRAFT",completedAt:completed?now:null},create:{appointmentId,patientId:patient.id,...input,consentedAt:input.consentToConsult?now:null,status:completed?"COMPLETED":"DRAFT",completedAt:completed?now:null}});});
+}
