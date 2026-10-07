@@ -30,6 +30,7 @@ export default function DashboardPage() {
   const [signingOut, setSigningOut] = useState(false);
 
   useEffect(() => {
+    let stream: EventSource | null = null;
     getCurrentUser().then(async (response) => {
       setUser(response.user);
       const [dashboard, notifications] = await Promise.all([
@@ -38,7 +39,11 @@ export default function DashboardPage() {
       ]);
       if (dashboard.ok) setData(await dashboard.json());
       if (notifications.ok) { const notificationData: NotificationData = await notifications.json(); setUnread(notificationData.unreadCount); }
+      stream = new EventSource(API_URL + "/v1/notifications/stream", { withCredentials: true });
+      stream.addEventListener("notification", () => setUnread((count) => count + 1));
+      stream.onerror = () => { stream?.close(); stream = null; };
     }).catch((err) => setError(err instanceof Error ? err.message : "Please sign in to view your dashboard.")).finally(() => setLoading(false));
+    return () => stream?.close();
   }, []);
 
   async function logout() { setSigningOut(true); try { await signOut(); router.push("/"); } catch { setSigningOut(false); setError("We could not end the session. Please try again."); } }
