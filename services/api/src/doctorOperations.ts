@@ -60,7 +60,8 @@ export async function registerDoctorOperationsRoutes(app: FastifyInstance) {
       documentName: z.string().trim().max(200).optional(),
       storageKey: z.string().trim().max(500).optional(),
     }).parse(request.body);
-    const credential = await prisma.doctorCredential.create({ data: { doctorId: user.doctor.id, ...input } });\n    await notifyUsersByRole("ADMIN", "DOCUMENT", "Doctor credential submitted", `${user.doctor.name ?? "A doctor"} submitted a credential for review.`);
+    const credential = await prisma.doctorCredential.create({ data: { doctorId: user.doctor.id, ...input } });
+    await notifyUsersByRole("ADMIN", "DOCUMENT", "Doctor credential submitted", `${user.doctor.name ?? "A doctor"} submitted a credential for review.`);
     await recordAudit(request, { actorUserId: user.id, action: "DOCTOR_CREDENTIAL_SUBMITTED", resourceType: "DoctorCredential", resourceId: credential.id, outcome: "SUCCESS" });
     return reply.code(201).send(credential);
   });
