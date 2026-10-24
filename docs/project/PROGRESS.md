@@ -104,6 +104,7 @@ Development, test and QA environments use synthetic data only. No real patient h
 - [x] Support SLA filters parse true/false query values explicitly and combine status and overdue conditions without silently overriding each other.
 - [x] Support attachment persistence model links files to tickets and uploaders; attachment content is returned only after ticket-owner/admin authorization.
 - [x] Doctor dashboard no longer renders availability slots as fake patient appointments; it loads the real doctor appointment queue, supports status filtering, and links to the clinical workspace.
+- [x] Doctor can cancel a future booked appointment with a required reason; cancellation is ownership-scoped, status-checked transactionally, releases the matching booked slot, notifies the patient, and records an audit event.
 - [x] UAT fixture uses a synthetic PDF signature and covers invalid metadata, malformed base64, and MIME/signature mismatch rejection.
 - [ ] Run API UAT integration suite and resolve any failures. CI status is not available from the latest commits yet.
 - [ ] Perform manual browser regression for patient login, questionnaire save/reload, and document preview/upload.
