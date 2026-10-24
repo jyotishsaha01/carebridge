@@ -12,7 +12,7 @@ export default function AdminLogin() {
   const [error,setError]=useState("");
   async function submit(event:FormEvent){
     event.preventDefault(); setBusy(true); setError("");
-    try { const result=await signIn(email,password); if(result.user.role!=="ADMIN") { await signOut().catch(()=>undefined); throw new Error("This account is not registered as an administrator. Choose Patient or Doctor sign-in instead."); } router.push("/dashboard"); }
+    try { const result=await signIn(email,password); if(result.user.role!=="ADMIN") { let sessionCleared = true; try { await signOut(); } catch { sessionCleared = false; } throw new Error(sessionCleared ? "This account is not registered as an administrator. Choose Patient or Doctor sign-in instead." : "This account is not registered as an administrator, and the session could not be cleared. Check your connection and retry before switching portals."); } router.push("/dashboard"); }
     catch(e){setError(e instanceof Error?e.message:"Unable to sign in.");} finally{setBusy(false);}
   }
   return <main style={{minHeight:"100vh",display:"grid",placeItems:"center",background:"#f7f9fc",padding:24,fontFamily:"Inter,system-ui,sans-serif"}}>
