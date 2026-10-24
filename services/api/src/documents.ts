@@ -5,7 +5,6 @@ import { createUploadIntent, documentStorage } from "./storage";
 import { requireRole } from "./auth";
 import { recordAudit } from "./audit";
 import { createNotification } from "./notificationsPrototype";
-import { saveDocument } from "./documentStoragePrototype";
 import { Buffer } from "node:buffer";
 
 async function requirePatient(request: FastifyRequest, reply: FastifyReply) { const user=await requireRole(request,reply,["PATIENT"]); if(!user?.patient)return null; return {user,patient:user.patient}; }
@@ -40,7 +39,7 @@ export async function registerDocumentRoutes(app: FastifyInstance){
   }
 
   try {
-    await saveDocument({ storageKey: document.storageKey, content, contentType: document.contentType });
+    await documentStorage.writeDocument({ storageKey: document.storageKey, content, contentType: document.contentType });
   } catch (error) {
     request.log.error({ err: error, documentId: document.id }, "Failed to store uploaded document");
     return reply.code(500).send({ error: "Document upload could not be completed. Please retry." });
@@ -58,7 +57,7 @@ export async function registerDocumentRoutes(app: FastifyInstance){
   const document=await prisma.medicalDocument.findFirst({where:{id:documentId,patientId:auth.patient.id}});
   if(!document)return reply.code(404).send({error:"Document not found"});
   try{
-    const content=await (await import("./documentStoragePrototype.js")).readDocument(document.storageKey);
+    const content=await documentStorage.readDocument(document.storageKey);
     await recordAudit(request,{actorUserId:auth.user.id,action:"PATIENT_DOCUMENT_CONTENT_VIEWED",resourceType:"MedicalDocument",resourceId:document.id,outcome:"SUCCESS"});
     return {contentBase64:content.toString("base64"),contentType:document.contentType,originalFileName:document.originalFileName};
   }catch{return reply.code(404).send({error:"Document content is not available"});}
