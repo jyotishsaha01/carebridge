@@ -80,6 +80,8 @@ async function waitForLiveNotification(stream: LiveNotificationStream, expectedT
 async function main() {
   let r = await request("/health");
   assert.equal(r.response.status, 200);
+  r = await request("/v1/auth/me", {}, "carebridge_session=%E0%A4%A");
+  assert.equal(r.response.status, 401, "Malformed session cookies should fail closed with 401");
   r = await request("/v1/doctors?limit=10");
   assert.equal(r.response.status, 200);
   assert.ok(r.body.some((d: any) => d.slug === "dr-anil-sharma"));
