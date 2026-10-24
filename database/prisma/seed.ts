@@ -4,7 +4,7 @@ import { scryptSync, randomBytes } from "node:crypto";
 function hashPassword(password: string) {
   const salt = randomBytes(16);
   const derived = scryptSync(password, salt, 64, { N: 16384, r: 8, p: 1 });
-  return `scrypt$16384$8$1${salt.toString("base64url")}${derived.toString("base64url")}`;
+  return `scrypt$16384$8$1$${salt.toString("base64url")}$${derived.toString("base64url")}`;
 }
 
 const DEMO_PASSWORD = process.env.CAREBRIDGE_UAT_PASSWORD ?? "CareBridge-UAT-Local-Only-2026!";
