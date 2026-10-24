@@ -5,8 +5,8 @@ import { createUploadIntent, documentStorage } from "./storage";
 import { requireRole } from "./auth";
 import { recordAudit } from "./audit";
 import { createNotification } from "./notificationsPrototype";
-import { Buffer } from "node:buffer";
 import { scanUploadedFile } from "./malwareScanner";
+import { Buffer } from "node:buffer";
 
 async function requirePatient(request: FastifyRequest, reply: FastifyReply) { const user=await requireRole(request,reply,["PATIENT"]); if(!user?.patient)return null; return {user,patient:user.patient}; }
 export async function registerDocumentRoutes(app: FastifyInstance){
@@ -41,8 +41,19 @@ export async function registerDocumentRoutes(app: FastifyInstance){
 
   const scan = await scanUploadedFile({ content, contentType: document.contentType, fileName: document.originalFileName });
   if (scan.status !== "clean") {
-    await recordAudit(request, { actorUserId: auth.user.id, action: scan.status === "infected" ? "PATIENT_DOCUMENT_MALWARE_REJECTED" : "PATIENT_DOCUMENT_SCAN_UNAVAILABLE", resourceType: "MedicalDocument", resourceId: document.id, outcome: "FAILURE", metadata: { scanStatus: scan.status, reason: scan.reason } });
-    return reply.code(scan.status === "infected" ? 422 : 503).send({ error: scan.status === "infected" ? "Document was rejected by malware scanning" : "Document scanning is temporarily unavailable; upload was not stored" });
+    await recordAudit(request, {
+      actorUserId: auth.user.id,
+      action: scan.status === "infected" ? "PATIENT_DOCUMENT_MALWARE_REJECTED" : "PATIENT_DOCUMENT_SCAN_UNAVAILABLE",
+      resourceType: "MedicalDocument",
+      resourceId: document.id,
+      outcome: "FAILURE",
+      metadata: { scanStatus: scan.status, reason: scan.reason },
+    });
+    return reply.code(scan.status === "infected" ? 422 : 503).send({
+      error: scan.status === "infected"
+        ? "Document was rejected by malware scanning"
+        : "Document scanning is temporarily unavailable; upload was not stored",
+    });
   }
 
   try {
