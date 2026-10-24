@@ -137,7 +137,7 @@ export default function Operations() {
         {error && <div role="alert" style={{ padding: 14, background: "#fff7ed", borderRadius: 12, color: "#9a3412" }}>{error}</div>}
         {notice && <div role="status" style={{ padding: 14, background: "#edf7f3", borderRadius: 12, color: "#17653f" }}>{notice}</div>}
 
-        <div style={{ display: "grid", gridTemplateColumns: "1.1fr .9fr", gap: 20, marginTop: 26 }}>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 420px), 1fr))", gap: 20, marginTop: 26 }}>
           <section id="doctors" style={{ background: "white", border: "1px solid #e2e8f0", borderRadius: 22, padding: 22, scrollMarginTop: 24 }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
               <h2>Provider license review</h2>

@@ -345,8 +345,9 @@ async function main() {
   assert.equal(r.response.status, 200, "Admin should be able to approve the submitted license");
   r = await request("/v1/admin/doctors?verified=all", {}, adminCookie);
   assert.ok(r.body.some((item: any) => item.slug === "dr-anil-sharma" && item.isVerified), "Approving credentials should verify the doctor");
-  r = await request("/v1/doctors?limit=10");
+  r = await request("/v1/doctors?limit=100");
   assert.ok(r.body.some((item: any) => item.slug === "dr-anil-sharma"), "Approved doctor should appear in patient search");
+  assert.ok(r.body.length <= 100, "Patient discovery should respect the configured listing limit");
 
   r = await request("/v1/admin/credentials/" + credentialId, { method: "PATCH", body: JSON.stringify({ status: "REJECTED" }) }, adminCookie);
   assert.equal(r.response.status, 200);

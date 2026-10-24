@@ -12,6 +12,7 @@ export type ApiDoctor = {
   expertise: string[];
   bio: string;
   verified: boolean;
+  listedAt?: string | null;
 };
 
 export type ApiSlot = {
@@ -45,12 +46,12 @@ async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 export function getSpecialties() { return apiFetch<Array<{ id: string; name: string }>>("/v1/specialties"); }
-export function getDoctors(params: { specialty?: string; q?: string } = {}) {
+export function getDoctors(params: { specialty?: string; q?: string; limit?: number } = {}) {
   const search = new URLSearchParams();
   if (params.specialty && params.specialty !== "All specialties") search.set("specialty", params.specialty);
-  if (params.q) search.set("q", params.q);
-  const suffix = search.toString() ? `?${search.toString()}` : "";
-  return apiFetch<ApiDoctor[]>(`/v1/doctors${suffix}`);
+  if (params.q?.trim()) search.set("q", params.q.trim());
+  search.set("limit", String(Math.min(100, Math.max(1, params.limit ?? 100))));
+  return apiFetch<ApiDoctor[]>(`/v1/doctors?${search.toString()}`);
 }
 export function getDoctor(slug: string) {
   return apiFetch<ApiDoctor & { costComparison: { patientCountry: string; comparableLowUsd: number; comparableHighUsd: number; sourceLabel: string; disclaimer: string } | null }>(`/v1/doctors/${slug}`);
