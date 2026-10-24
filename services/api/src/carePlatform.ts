@@ -5,7 +5,6 @@ import { getAuthenticatedUser, requireRole } from "./auth";
 import { recordAudit } from "./audit";
 import { createNotification, notifyUsersByRole } from "./notificationsPrototype";
 
-const notificationQuery = z.object({ limit: z.coerce.number().int().min(1).max(100).default(50), unreadOnly: z.enum(["true", "false"]).default("false") });
 const taskStatus = z.enum(["TODO", "IN_PROGRESS", "DONE", "SKIPPED"]);
 
 async function requirePatient(request: FastifyRequest, reply: FastifyReply) {
