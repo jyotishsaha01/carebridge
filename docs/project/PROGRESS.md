@@ -94,6 +94,8 @@ Development, test and QA environments use synthetic data only. No real patient h
 - [x] Medical intake API: enforce patient ownership before read/write and persist drafts/completed consent state with an upsert.
 - [x] UAT coverage added for questionnaire draft save, fresh-GET persistence, invalid field lengths, and doctor access denial.
 - [x] UAT coverage added for document content ownership boundaries (doctor denied; unknown document returns not found).
+- [x] Document upload API rejects malformed base64, mismatched MIME/file signatures, and storage write failures with controlled responses.
+- [x] UAT fixture uses a synthetic PDF signature and covers malformed base64 and MIME/signature mismatch rejection.
 - [ ] Run API UAT integration suite and resolve any failures. CI status is not available from the latest commits yet.
 - [ ] Perform manual browser regression for patient login, questionnaire save/reload, and document preview/upload.
 
