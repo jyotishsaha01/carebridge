@@ -11,7 +11,7 @@ export async function registerPatientDashboardRoutes(app: FastifyInstance) {
     const patientId = user.patient.id;
     const [appointments, documents, consultations] = await Promise.all([
       prisma.appointment.findMany({
-        where: { patientId },
+        where: { patientId, status: "BOOKED", scheduledAt: { gte: new Date() } },
         include: { doctor: { include: { specialty: true } } },
         orderBy: { scheduledAt: "asc" },
         take: 10,
