@@ -18,10 +18,33 @@ export async function registerDocumentRoutes(app: FastifyInstance){
   const input=z.object({contentBase64:z.string().min(1)}).parse(request.body);
   const document=await prisma.medicalDocument.findFirst({where:{id:documentId,patientId:auth.patient.id}});
   if(!document)return reply.code(404).send({error:"Document not found"});
-  let content:Buffer;
-  try{content=Buffer.from(input.contentBase64,"base64");}catch{return reply.code(400).send({error:"Invalid document content"});}
-  if(content.length!==document.sizeBytes)return reply.code(400).send({error:"Document size does not match upload metadata"});
-  await saveDocument({storageKey:document.storageKey,content,contentType:document.contentType});
+  // Buffer.from(base64) is permissive; reject malformed encodings before writing bytes.
+  if (!/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(input.contentBase64)) {
+    return reply.code(400).send({ error: "Invalid document content encoding" });
+  }
+  const content = Buffer.from(input.contentBase64, "base64");
+  if (content.toString("base64") !== input.contentBase64) {
+    return reply.code(400).send({ error: "Invalid document content encoding" });
+  }
+  if (content.length !== document.sizeBytes) {
+    return reply.code(400).send({ error: "Document size does not match upload metadata" });
+  }
+
+  // Do not trust the declared MIME type alone: verify the file signature.
+  const matchesContentType =
+    (document.contentType === "application/pdf" && content.subarray(0, 5).toString("ascii") === "%PDF-") ||
+    (document.contentType === "image/png" && content.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]))) ||
+    (document.contentType === "image/jpeg" && content.length >= 3 && content[0] === 0xff && content[1] === 0xd8 && content[2] === 0xff);
+  if (!matchesContentType) {
+    return reply.code(400).send({ error: "Document content does not match the declared file type" });
+  }
+
+  try {
+    await saveDocument({ storageKey: document.storageKey, content, contentType: document.contentType });
+  } catch (error) {
+    request.log.error({ err: error, documentId: document.id }, "Failed to store uploaded document");
+    return reply.code(500).send({ error: "Document upload could not be completed. Please retry." });
+  }
   await recordAudit(request,{actorUserId:auth.user.id,action:"PATIENT_DOCUMENT_UPLOADED",resourceType:"MedicalDocument",resourceId:document.id,outcome:"SUCCESS"});
   if (document.appointmentId) {
     const appointment = await prisma.appointment.findUnique({ where: { id: document.appointmentId }, include: { doctor: { select: { userId: true, name: true } } } });
