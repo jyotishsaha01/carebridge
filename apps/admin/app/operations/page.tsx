@@ -24,8 +24,10 @@ export default function Operations() {
   const [error, setError] = useState("");
   const [busy, setBusy] = useState("");
 
-  async function load() {const session=await getCurrentUser();if(session.user.role!=="ADMIN")throw new Error("Administrator access required.");
+  async function load() {
     try {
+      const session = await getCurrentUser();
+      if (session.user.role !== "ADMIN") throw new Error("Administrator access required.");
       const [d, p, a] = await Promise.all([getDoctors(), getPatients(), getAppointments()]);
       setDoctors(d);
       setPatients(p);

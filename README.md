@@ -37,13 +37,32 @@ In one terminal:
 pnpm --filter @carebridge/api dev
 ```
 
-In another:
+In another terminal, start the Patient app:
 
 ```bash
-pnpm --filter @carebridge/patient dev
+pnpm --filter @carebridge/patient dev -- --port 3000
 ```
 
-Open `http://localhost:3000` for the Patient app and `http://localhost:4000/health` for the API health check.
+Start the Doctor workspace in a separate terminal:
+
+```bash
+pnpm --filter @carebridge/doctor dev -- --port 3001
+```
+
+Start the Admin console in another terminal:
+
+```bash
+pnpm --filter @carebridge/admin dev -- --port 3002
+```
+
+Open these local URLs:
+
+- Patient app: `http://localhost:3000`
+- Doctor sign-in: `http://localhost:3001/login`
+- Admin sign-in: `http://localhost:3002/login`
+- API health check: `http://localhost:4000/health`
+
+The Patient sign-in page links to the Doctor and Admin portals. For non-local environments, set `NEXT_PUBLIC_DOCTOR_PORTAL_URL` and `NEXT_PUBLIC_ADMIN_PORTAL_URL` in the Patient app's build environment to the corresponding portal login URLs. The default links are for local development only.
 
 ## Data safety
 

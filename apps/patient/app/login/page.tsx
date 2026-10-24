@@ -49,7 +49,28 @@ export default function LoginPage() {
           <h1>{mode === "login" ? "Welcome back." : "Start your care journey."}</h1>
           <p>{mode === "login" ? "Sign in to manage consultations, medical records and follow-ups." : "Create a secure patient account to book consultations and keep your care organized."}</p>
         </div>
-        <div className={styles.tabs} role="tablist" aria-label="Account access">
+        <div aria-label="Choose your CareBridge portal" style={{ marginTop: 22, marginBottom: 22 }}>
+          <p style={{ fontSize: 13, fontWeight: 800, color: "#526579", marginBottom: 10 }}>SIGN IN AS</p>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 10 }}>
+            <div aria-current="page" style={{ border: "2px solid #1672b8", borderRadius: 14, padding: "13px 10px", background: "#eff7ff", color: "#145b91", textAlign: "center" }}>
+              <div style={{ fontSize: 20, marginBottom: 5 }}>👤</div>
+              <div style={{ fontSize: 14, fontWeight: 800 }}>Patient</div>
+              <div style={{ fontSize: 11, marginTop: 4 }}>Current portal</div>
+            </div>
+            <a href={process.env.NEXT_PUBLIC_DOCTOR_PORTAL_URL ?? "http://localhost:3001/login"} style={{ display: "block", textDecoration: "none", border: "1px solid #cbd5e1", borderRadius: 14, padding: "13px 10px", color: "#172334", textAlign: "center", background: "#fff" }}>
+              <div style={{ fontSize: 20, marginBottom: 5 }}>🩺</div>
+              <div style={{ fontSize: 14, fontWeight: 800 }}>Doctor</div>
+              <div style={{ fontSize: 11, marginTop: 4 }}>Doctor sign in →</div>
+            </a>
+            <a href={process.env.NEXT_PUBLIC_ADMIN_PORTAL_URL ?? "http://localhost:3002/login"} style={{ display: "block", textDecoration: "none", border: "1px solid #cbd5e1", borderRadius: 14, padding: "13px 10px", color: "#172334", textAlign: "center", background: "#fff" }}>
+              <div style={{ fontSize: 20, marginBottom: 5 }}>🛡️</div>
+              <div style={{ fontSize: 14, fontWeight: 800 }}>Admin</div>
+              <div style={{ fontSize: 11, marginTop: 4 }}>Admin sign in →</div>
+            </a>
+          </div>
+          <p style={{ fontSize: 12, color: "#64748b", marginTop: 9 }}>Choose Patient to use this form, or select Doctor/Admin to open that portal's sign-in page.</p>
+        </div>
+        <div className={styles.tabs} role="tablist" aria-label="Patient account access">
           <button className={mode === "login" ? styles.active : ""} onClick={() => setMode("login")} type="button">Sign in</button>
           <button className={mode === "signup" ? styles.active : ""} onClick={() => setMode("signup")} type="button">Create account</button>
         </div>
