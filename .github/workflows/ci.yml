@@ -57,7 +57,6 @@ jobs:
         run: pnpm db:setup
       - name: Start API
         env:
-          DATABASE_URL: file:./database/prisma/dev.db
           ALLOW_DEMO_AUTH: "true"
           NODE_ENV: test
         run: |
