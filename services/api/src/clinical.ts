@@ -38,6 +38,66 @@ export async function registerClinicalRoutes(app: FastifyInstance) {
     });
   });
 
+  app.post("/v1/doctor/appointments/:appointmentId/cancel", async (request, reply) => {
+    const user = await requireDoctor(request, reply);
+    if (!user?.doctor) return;
+    const { appointmentId } = z.object({ appointmentId: z.string().trim().min(1) }).parse(request.params);
+    const input = z.object({ reason: z.string().trim().min(3).max(1000) }).parse(request.body);
+
+    const appointment = await prisma.appointment.findFirst({
+      where: { id: appointmentId, doctorId: user.doctor.id },
+      include: { patient: { select: { userId: true } }, consultation: { select: { status: true } } },
+    });
+    if (!appointment) return reply.code(404).send({ error: "Appointment not found" });
+    if (appointment.status !== "BOOKED") {
+      return reply.code(409).send({ error: "Only booked appointments can be cancelled" });
+    }
+    if (appointment.scheduledAt <= new Date()) {
+      return reply.code(409).send({ error: "Past or in-progress appointments cannot be cancelled" });
+    }
+    if (appointment.consultation && ["IN_PROGRESS", "COMPLETED"].includes(appointment.consultation.status)) {
+      return reply.code(409).send({ error: "A started or completed consultation cannot be cancelled" });
+    }
+
+    try {
+      await prisma.$transaction(async (tx) => {
+        const changed = await tx.appointment.updateMany({
+          where: { id: appointmentId, doctorId: user.doctor!.id, status: "BOOKED", scheduledAt: { gt: new Date() } },
+          data: { status: "CANCELLED" },
+        });
+        if (changed.count !== 1) throw new Error("APPOINTMENT_NOT_CANCELLABLE");
+        await tx.availabilitySlot.updateMany({
+          where: { doctorId: user.doctor!.id, startsAt: appointment.scheduledAt, status: "BOOKED" },
+          data: { status: "AVAILABLE" },
+        });
+      });
+    } catch (error) {
+      if (error instanceof Error && error.message === "APPOINTMENT_NOT_CANCELLABLE") {
+        return reply.code(409).send({ error: "Appointment status changed; refresh and try again" });
+      }
+      throw error;
+    }
+
+    await recordAudit(request, {
+      actorUserId: user.id,
+      action: "DOCTOR_APPOINTMENT_CANCELLED",
+      resourceType: "Appointment",
+      resourceId: appointment.id,
+      outcome: "SUCCESS",
+      metadata: { reason: input.reason },
+    });
+    if (appointment.patient.userId) {
+      await createNotification({
+        userId: appointment.patient.userId,
+        role: "PATIENT",
+        type: "CONSULTATION",
+        title: "Appointment cancelled by your doctor",
+        body: "Your appointment scheduled for " + appointment.scheduledAt.toISOString() + " was cancelled. Reason: " + input.reason,
+      });
+    }
+    return { id: appointment.id, status: "CANCELLED" };
+  });
+
   app.put("/v1/doctor/appointments/:appointmentId/consultation", async (request, reply) => {
     const user = await requireDoctor(request, reply);
     if (!user?.doctor) return;
