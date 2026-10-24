@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { bookAppointment, getAvailability, getDoctors, getSpecialties, type ApiDoctor, type ApiSlot } from "../lib/api";
+import { bookAppointment, getAvailability, getCurrentUser, getDoctors, getSpecialties, type ApiDoctor, type ApiSlot } from "../lib/api";
 import { doctors as demoDoctors, specialties as demoSpecialties } from "../data";
 
 export default function Home() {
@@ -16,6 +16,13 @@ export default function Home() {
   const [selectedSlot, setSelectedSlot] = useState<ApiSlot | null>(null);
   const [bookingState, setBookingState] = useState<"idle" | "loading" | "success" | "error">("idle");
   const [apiState, setApiState] = useState<"loading" | "connected" | "fallback">("loading");
+  const [signedIn, setSignedIn] = useState(false);
+
+  useEffect(() => {
+    let active = true;
+    getCurrentUser().then(() => { if (active) setSignedIn(true); }).catch(() => { if (active) setSignedIn(false); });
+    return () => { active = false; };
+  }, []);
 
   useEffect(() => {
     let active = true;
@@ -59,7 +66,7 @@ export default function Home() {
 
   return (
     <main className="site-shell">
-      <header className="topbar"><a className="brand" href="#top" aria-label="CareBridge home"><span className="brand-mark">C</span><span>CareBridge</span></a><nav className="nav-links" aria-label="Primary navigation"><a href="#specialists">Find Specialists</a><a href="#how-it-works">How It Works</a><a href="#smart-cost">Smart Cost</a><a className="nav-login" href="/login">Sign in</a></nav></header>
+      <header className="topbar"><a className="brand" href={signedIn ? "/dashboard" : "#top"} aria-label={signedIn ? "CareBridge patient dashboard" : "CareBridge home"}><span className="brand-mark">C</span><span>CareBridge</span></a><nav className="nav-links" aria-label="Primary navigation"><a href="#specialists">Find Specialists</a><a href="#how-it-works">How It Works</a><a href="#smart-cost">Smart Cost</a><a className="nav-login" href="/login">Sign in</a></nav></header>
       <section id="top" className="hero"><div className="hero-copy"><div className="eyebrow">GLOBAL HEALTHCARE · TRUSTED CARE · SMARTER COSTS</div><h1>Expert medical care, <span>without the premium price.</span></h1><p>Connect with qualified specialists through convenient virtual consultations. Understand the cost difference before you book.</p><div className="hero-actions"><a className="button primary" href="#specialists">Find a Specialist</a><a className="button ghost" href="#how-it-works">See how it works</a></div><div className="trust-row"><span>✓ Qualified specialists</span><span>✓ Secure records</span><span>✓ Transparent pricing</span></div></div><div className="hero-card" aria-label="Smart Cost example"><div className="floating-dot dot-one" /><div className="floating-dot dot-two" /><div className="hero-card-top"><span>CAREBRIDGE SMART COST</span><span className="live-pill">DEMO BENCHMARK</span></div><div className="specialist-mini"><div className="avatar avatar-large">AS</div><div><strong>Dr. Anil Sharma</strong><span>Orthopedic Specialist</span></div></div><div className="price-grid"><div><span>CareBridge</span><strong>$25</strong></div><div><span>Comparable US estimate</span><strong>$150–$350</strong></div></div><div className="savings"><span>Estimated difference</span><strong>$125–$325</strong></div><p className="microcopy">Illustrative estimate. Actual comparable pricing varies by provider, location, specialty and insurance.</p></div></section>
       <section id="specialists" className="content-section"><div className="section-heading"><div><div className="eyebrow">SPECIALIST NETWORK</div><h2>Find care that fits your needs.</h2></div><p>Search by specialty, doctor or area of expertise.</p></div><div className="search-row"><label className="search-box"><span>⌕</span><input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search doctors or specialties" aria-label="Search doctors or specialties" /></label><select value={specialty} onChange={(e) => setSpecialty(e.target.value)} aria-label="Filter by specialty"><option>All specialties</option>{specialtyList.map((item) => <option key={item}>{item}</option>)}</select></div>{apiState === "fallback" && <div className="empty-state">API is offline, so the page is showing synthetic demo data. Start PostgreSQL and the CareBridge API to use live discovery and booking.</div>}<div className="doctor-grid">{filteredDoctors.map((doctor) => <article className="doctor-card" key={doctor.id}><div className="doctor-card-top"><div className="avatar">{doctor.initials}</div><span className="verified">✓ Verified</span></div><h3>{doctor.name}</h3><p className="doctor-specialty">{doctor.specialty}</p><div className="rating">★ {doctor.rating} <span>·</span> {doctor.experience} years experience</div><div className="expertise-row">{doctor.expertise.slice(0, 3).map((item) => <span key={item}>{item}</span>)}</div><div className="doctor-meta"><span>📍 {doctor.location}</span><span>🗣 English</span></div><div className="doctor-price"><div><span>Consultation</span><strong>${doctor.price}</strong></div><div className="us-compare"><span>US estimate</span><strong>{doctor.usLow && doctor.usHigh ? `$${doctor.usLow}–$${doctor.usHigh}` : "See profile"}</strong></div></div><button className="button dark full" onClick={() => openDoctor(doctor)}>View specialist</button></article>)}</div>{!filteredDoctors.length && <div className="empty-state">No specialists match your search. Try a broader term or specialty.</div>}</section>
       <section id="smart-cost" className="smart-section"><div><div className="eyebrow">SMART COST</div><h2>Don't just hear that healthcare can cost less. <span>See the difference.</span></h2><p>Every consultation can show an estimated comparable US self-pay range so patients can make a more informed decision before booking.</p></div><div className="comparison-card"><div><span>Your CareBridge price</span><strong>$25</strong></div><div className="arrow">→</div><div><span>Comparable US estimate</span><strong>$150–$350</strong></div><div className="comparison-badge">Estimated difference<br /><strong>$125–$325</strong></div></div></section>
