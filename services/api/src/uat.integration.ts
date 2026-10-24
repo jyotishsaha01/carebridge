@@ -51,6 +51,20 @@ async function main() {
   assert.equal(r.response.status, 200);
   assert.equal(r.body.user.role, "PATIENT");
 
+  // Document endpoints must reject the wrong role and never disclose unknown records.
+  const unknownPatientId = "uat-missing-patient-" + crypto.randomUUID();
+  const unknownDocumentId = "uat-missing-document-" + crypto.randomUUID();
+  r = await request(`/v1/doctor/patients/${unknownPatientId}/documents`, {}, doctorCookie);
+  assert.equal(r.response.status, 404, "Doctor document list should not disclose a missing patient");
+  r = await request(`/v1/doctor/documents/${unknownDocumentId}`, {}, doctorCookie);
+  assert.equal(r.response.status, 404, "Doctor metadata endpoint should not disclose a missing document");
+  r = await request(`/v1/doctor/documents/${unknownDocumentId}/content`, {}, doctorCookie);
+  assert.equal(r.response.status, 404, "Doctor content endpoint should not disclose a missing document");
+  r = await request(`/v1/doctor/patients/${unknownPatientId}/documents`, {}, patientCookie);
+  assert.ok([401, 403].includes(r.response.status), "Patient must not call the doctor document-list endpoint");
+  r = await request(`/v1/doctor/documents/${unknownDocumentId}/content`, {}, adminCookie);
+  assert.ok([401, 403].includes(r.response.status), "Admin must not call the doctor document-content endpoint");
+
   r = await request("/v1/doctors/dr-anil-sharma/availability?from=2026-10-06T00:00:00.000Z&to=2026-11-30T23:59:59.000Z");
   assert.equal(r.response.status, 200);
   assert.ok(r.body.length > 0, "Expected seeded doctor availability");
