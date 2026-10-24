@@ -19,6 +19,23 @@ type NotificationResponse = {
   unreadCount: number;
 };
 
+function formatNotificationDate(value: string): string {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return new Intl.DateTimeFormat(undefined, {
+    dateStyle: "medium",
+    timeStyle: "short",
+  }).format(date);
+}
+
+function formatNotificationBody(value: string): string {
+  // API event text may contain ISO timestamps; display them as readable local dates.
+  return value.replace(
+    /\\b\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d+)?(?:Z|[+-]\\d{2}:?\\d{2})?\\b/g,
+    (timestamp) => formatNotificationDate(timestamp),
+  );
+}
+
 export default function NotificationsPage() {
   const [items, setItems] = useState<Notification[]>([]);
   const [unread, setUnread] = useState(0);
@@ -164,10 +181,10 @@ export default function NotificationsPage() {
                     </div>
                     <div className={styles.body}>
                       <div className={styles.meta}>
-                        {item.type} · {new Date(item.createdAt).toLocaleString()}
+                        {item.type} · {formatNotificationDate(item.createdAt)}
                       </div>
                       <h2 className={styles.cardTitle}>{item.title}</h2>
-                      <p className={styles.cardBody}>{item.body}</p>
+                      <p className={styles.cardBody}>{formatNotificationBody(item.body)}</p>
                     </div>
                     {isUnread && (
                       <button className={styles.read} onClick={() => void mark(item.id)} disabled={busy}>
