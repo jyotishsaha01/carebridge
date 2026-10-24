@@ -67,6 +67,7 @@
 - [x] Admin operational analytics
 - [x] Patient dashboard connected to live patient counts and notifications
 - [x] Doctor dashboard loads the authenticated doctor profile, real assigned appointments, intake status, and open-slot count from API endpoints
+- [x] Patient appointment lifecycle: future booked appointments can be cancelled or rescheduled with slot synchronization, ownership checks, notifications and audit logging
 - [x] Support request creation, status updates and admin queue
 - [x] Threaded support messages with patient/admin authorization checks
 - [x] Real-time notifications for support request creation, replies and status updates
@@ -110,6 +111,10 @@ Development, test and QA environments use synthetic data only. No real patient h
 - [x] Added a doctor-scoped clinical-record read endpoint and reloads saved consultation summary, latest note, prescription item, and follow-up when switching appointments in the doctor workspace.
 - [x] Clinical note saves update the latest note rather than creating a duplicate on every edit; the doctor workspace reloads persisted data after successful note, prescription, and follow-up saves.
 - [x] Doctor prescription editor supports multiple medication items, displays saved items on reload, shows a clinical-record loading state, prevents duplicate concurrent save actions, and avoids applying save responses to a newly selected appointment.
+- [x] Patient appointment cancellation is patient-scoped, future-booking-only, transactionally updates appointment/consultation state and releases the booked slot; cancellation is audited and notifies patient and doctor.
+- [x] Patient appointment rescheduling claims a future available slot, updates the booked appointment and releases its previous slot in one transaction, with stale-state/conflict handling, audit metadata and patient/doctor notifications.
+- [x] Patient appointment detail page supports viewing available times, rescheduling, reasoned cancellation, and clear pending/success/error states.
+- [x] Removed the appointment-level doctor/time unique constraint so cancelled slots can be booked again; the unique availability-slot constraint plus conditional transaction claim remains the double-booking guard.
 - [x] UAT fixture uses a synthetic PDF signature and covers invalid metadata, malformed base64, and MIME/signature mismatch rejection.
 - [ ] Run API UAT integration suite and resolve any failures. CI status is not available from the latest commits yet.
 - [ ] Perform manual browser regression for patient login, questionnaire save/reload, and document preview/upload.
