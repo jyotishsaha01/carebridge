@@ -52,6 +52,18 @@ Use synthetic/demo accounts and data only. Do not use real patient health inform
 - [ ] Session revocation handles failure and only removes a session from the UI after API success.
 - [ ] Profile and session APIs enforce patient ownership on the server.
 
+## 6. Patient Documents and Access
+
+- [ ] Signed-out users cannot list, upload, inspect, or open document content.
+- [ ] A patient can list and open only documents owned by their authenticated patient account.
+- [ ] A different patient cannot access document metadata or content by changing the document ID.
+- [ ] Upload intent rejects unsupported MIME types, empty/oversized files, and invalid appointment IDs.
+- [ ] Content upload rejects malformed base64, size mismatches, unsupported stored content types, and files above 10 MB.
+- [ ] PDF and image previews open after an authenticated content fetch; popup-blocked and API-error states are understandable.
+- [ ] Missing local content is reported clearly without exposing storage keys or internal errors.
+- [ ] Upload and document-content access events are recorded in the audit trail.
+- [ ] Use synthetic files only; verify PDF, JPG, PNG, unsupported type, 10 MB boundary, and cross-patient denial.
+
 ## Exit criteria
 
 - [ ] Run lint, typecheck, unit tests, and API contract tests.
