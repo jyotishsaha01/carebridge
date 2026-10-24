@@ -64,6 +64,16 @@ Use synthetic/demo accounts and data only. Do not use real patient health inform
 - [ ] Upload and document-content access events are recorded in the audit trail.
 - [ ] Use synthetic files only; verify PDF, JPG, PNG, unsupported type, 10 MB boundary, and cross-patient denial.
 
+## 7. Cross-Role Regression
+
+- [ ] Unauthenticated requests to patient, doctor, and admin protected APIs return 401.
+- [ ] Patient credentials cannot access doctor-only or admin-only APIs (403).
+- [ ] Doctor credentials cannot access patient-only or admin-only APIs (403).
+- [ ] Admin credentials cannot access patient-only or doctor-only APIs (403).
+- [ ] Valid role can still access its own portal APIs after denied requests.
+- [ ] Regression UAT uses synthetic accounts and checks response status as well as data ownership.
+- [ ] Record CI run, commit SHA, test environment, and any failures before sign-off.
+
 ## Exit criteria
 
 - [ ] Run lint, typecheck, unit tests, and API contract tests.
