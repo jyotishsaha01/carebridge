@@ -14,35 +14,6 @@ async function requirePatient(request: FastifyRequest, reply: FastifyReply) {
 }
 
 export async function registerCarePlatformRoutes(app: FastifyInstance) {
-  app.get("/v1/notifications", async (request, reply) => {
-    const user = await getAuthenticatedUser(request);
-    if (!user) return reply.code(401).send({ error: "Authentication required" });
-    const query = notificationQuery.parse(request.query);
-    const notifications = await prisma.notification.findMany({
-      where: { userId: user.id, ...(query.unreadOnly === "true" ? { status: "UNREAD" } : {}) },
-      orderBy: { createdAt: "desc" },
-      take: query.limit,
-    });
-    const unreadCount = await prisma.notification.count({ where: { userId: user.id, status: "UNREAD" } });
-    return { unreadCount, notifications };
-  });
-
-  app.post("/v1/notifications/:notificationId/read", async (request, reply) => {
-    const user = await getAuthenticatedUser(request);
-    if (!user) return reply.code(401).send({ error: "Authentication required" });
-    const { notificationId } = z.object({ notificationId: z.string().min(1) }).parse(request.params);
-    const result = await prisma.notification.updateMany({ where: { id: notificationId, userId: user.id, status: "UNREAD" }, data: { status: "READ", readAt: new Date() } });
-    if (result.count === 0) return reply.code(404).send({ error: "Notification not found" });
-    return { ok: true };
-  });
-
-  app.post("/v1/notifications/read-all", async (request, reply) => {
-    const user = await getAuthenticatedUser(request);
-    if (!user) return reply.code(401).send({ error: "Authentication required" });
-    const result = await prisma.notification.updateMany({ where: { userId: user.id, status: "UNREAD" }, data: { status: "READ", readAt: new Date() } });
-    return { ok: true, updated: result.count };
-  });
-
   app.get("/v1/patient/care-plans", async (request, reply) => {
     const user = await requirePatient(request, reply);
     if (!user?.patient) return;
