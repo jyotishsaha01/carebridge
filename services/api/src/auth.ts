@@ -1,6 +1,5 @@
 import { createHash, randomBytes, scryptSync, timingSafeEqual } from "node:crypto";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
-import type { UserRole } from "@prisma/client";
 import { z } from "zod";
 import { prisma } from "./server";
 import { recordAudit } from "./audit";
@@ -97,7 +96,7 @@ export async function getAuthenticatedUser(request: FastifyRequest) {
   return session.user;
 }
 
-export async function requireRole(request: FastifyRequest, reply: FastifyReply, allowed: UserRole[] | Role[]) {
+export async function requireRole(request: FastifyRequest, reply: FastifyReply, allowed: Role[]) {
   const user = await getAuthenticatedUser(request);
   if (!user) { void reply.code(401).send({ error: "Authentication required" }); return null; }
   if (!(allowed as Role[]).includes(user.role as Role)) { void reply.code(403).send({ error: "Insufficient permissions" }); return null; }
