@@ -60,6 +60,13 @@ export default function LoginPage() {
         </form>
         {mode === "login" && <div style={{ marginTop: 12, display: "flex", gap: 14, flexWrap: "wrap" }}><Link className="microcopy" href="/forgot-password">Forgot password?</Link><Link className="microcopy" href="/verify-email">Verify email</Link></div>}
         {message && <div className={styles.message} role="status">{message}</div>}
+        <div style={{ marginTop: 18, paddingTop: 16, borderTop: "1px solid #e2e8f0" }}>
+          <p className="microcopy" style={{ marginBottom: 10 }}>Care team access</p>
+          <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
+            <a className="microcopy" href={process.env.NEXT_PUBLIC_DOCTOR_PORTAL_URL ?? "http://localhost:3001/login"}>Doctor sign in →</a>
+            <a className="microcopy" href={process.env.NEXT_PUBLIC_ADMIN_PORTAL_URL ?? "http://localhost:3002/login"}>Admin sign in →</a>
+          </div>
+        </div>
         <div className={styles.trust}><span>🔒 Encrypted session</span><span>✓ Patient account</span><span>✓ Security events audited</span></div>
         <p className="microcopy">Development environment: authentication is connected to the local CareBridge API. Production identity verification, recovery, abuse protection and regulatory controls remain release gates.</p>
       </section>
