@@ -5,7 +5,7 @@ import { requireRole } from "./auth";
 import { recordAudit } from "./audit";
 import { createNotification } from "./notificationsPrototype";
 
-const consultationPayload = z.object({ status: z.enum(["SCHEDULED", "IN_PROGRESS", "COMPLETED", "CANCELLED"]), summary: z.string().trim().max(10000).optional().nullable() });
+const consultationPayload = z.object({ status: z.enum(["IN_PROGRESS", "COMPLETED"]), summary: z.string().trim().max(10000).optional().nullable() });
 const notePayload = z.object({ assessment: z.string().trim().max(10000).optional().nullable(), findings: z.string().trim().max(10000).optional().nullable(), recommendations: z.string().trim().max(10000).optional().nullable(), privateNotes: z.string().trim().max(10000).optional().nullable() });
 const prescriptionPayload = z.object({ instructions: z.string().trim().max(5000).optional().nullable(), items: z.array(z.object({ medication: z.string().trim().min(1).max(300), dose: z.string().trim().max(200).optional().nullable(), frequency: z.string().trim().max(200).optional().nullable(), duration: z.string().trim().max(200).optional().nullable(), route: z.string().trim().max(100).optional().nullable(), instructions: z.string().trim().max(1000).optional().nullable() })).max(25) });
 const followUpPayload = z.object({ dueAt: z.coerce.date().optional().nullable(), instructions: z.string().trim().max(5000).optional().nullable(), status: z.enum(["RECOMMENDED", "SCHEDULED", "COMPLETED", "CANCELLED"]).default("RECOMMENDED") });
@@ -101,30 +101,67 @@ export async function registerClinicalRoutes(app: FastifyInstance) {
   app.put("/v1/doctor/appointments/:appointmentId/consultation", async (request, reply) => {
     const user = await requireDoctor(request, reply);
     if (!user?.doctor) return;
-    const { appointmentId } = z.object({ appointmentId: z.string().min(1) }).parse(request.params);
+    const { appointmentId } = z.object({ appointmentId: z.string().trim().min(1) }).parse(request.params);
     const input = consultationPayload.parse(request.body);
-    const appointment = await prisma.appointment.findFirst({ where: { id: appointmentId, doctorId: user.doctor.id } });
+    const appointment = await prisma.appointment.findFirst({
+      where: { id: appointmentId, doctorId: user.doctor.id },
+      include: { consultation: true },
+    });
     if (!appointment) return reply.code(404).send({ error: "Appointment not found" });
 
+    const currentConsultationStatus = appointment.consultation?.status ?? null;
+    if (input.status === "IN_PROGRESS") {
+      if (appointment.status !== "BOOKED" || (currentConsultationStatus !== null && currentConsultationStatus !== "SCHEDULED")) {
+        return reply.code(409).send({ error: "Only a booked appointment with no started consultation can be started" });
+      }
+    } else if (currentConsultationStatus !== "IN_PROGRESS") {
+      return reply.code(409).send({ error: "Start the consultation before completing it" });
+    }
+
     const now = new Date();
-    const consultation = await prisma.consultation.upsert({
-      where: { appointmentId },
-      update: {
-        status: input.status,
-        summary: input.summary,
-        startedAt: input.status === "IN_PROGRESS" ? now : undefined,
-        endedAt: input.status === "COMPLETED" ? now : undefined,
-      },
-      create: {
-        appointmentId,
-        patientId: appointment.patientId,
-        doctorId: appointment.doctorId,
-        status: input.status,
-        summary: input.summary,
-        startedAt: input.status === "IN_PROGRESS" ? now : null,
-        endedAt: input.status === "COMPLETED" ? now : null,
-      },
-    });
+    let consultation;
+    try {
+      consultation = await prisma.$transaction(async (tx) => {
+        const allowedAppointmentStatuses = input.status === "IN_PROGRESS" ? ["BOOKED"] : ["BOOKED", "IN_PROGRESS"];
+        const changed = await tx.appointment.updateMany({
+          where: { id: appointmentId, doctorId: user.doctor!.id, status: { in: allowedAppointmentStatuses } },
+          data: { status: input.status },
+        });
+        if (changed.count !== 1) throw new Error("APPOINTMENT_STATE_CHANGED");
+
+        if (appointment.consultation) {
+          const allowedConsultationStatuses = input.status === "IN_PROGRESS" ? ["SCHEDULED"] : ["IN_PROGRESS"];
+          const updated = await tx.consultation.updateMany({
+            where: { id: appointment.consultation.id, doctorId: user.doctor!.id, status: { in: allowedConsultationStatuses } },
+            data: {
+              status: input.status,
+              summary: input.summary,
+              startedAt: input.status === "IN_PROGRESS" ? now : undefined,
+              endedAt: input.status === "COMPLETED" ? now : undefined,
+            },
+          });
+          if (updated.count !== 1) throw new Error("CONSULTATION_STATE_CHANGED");
+          return tx.consultation.findUniqueOrThrow({ where: { id: appointment.consultation.id } });
+        }
+
+        if (input.status !== "IN_PROGRESS") throw new Error("CONSULTATION_NOT_STARTED");
+        return tx.consultation.create({
+          data: {
+            appointmentId,
+            patientId: appointment.patientId,
+            doctorId: appointment.doctorId,
+            status: "IN_PROGRESS",
+            summary: input.summary,
+            startedAt: now,
+          },
+        });
+      });
+    } catch (error) {
+      if (error instanceof Error && ["APPOINTMENT_STATE_CHANGED", "CONSULTATION_STATE_CHANGED", "CONSULTATION_NOT_STARTED"].includes(error.message)) {
+        return reply.code(409).send({ error: "Appointment or consultation status changed. Refresh the workspace and try again." });
+      }
+      throw error;
+    }
 
     await recordAudit(request, { actorUserId: user.id, action: "CLINICAL_CONSULTATION_STATUS", resourceType: "Consultation", resourceId: consultation.id, outcome: "SUCCESS", metadata: { status: input.status } });
 
