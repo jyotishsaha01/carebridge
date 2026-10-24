@@ -86,6 +86,19 @@ async function main() {
   const patientCookie = await login(accounts.patient);
   const doctorCookie = await login(accounts.doctor);
   const adminCookie = await login(accounts.admin);
+  // Role-boundary regression: unauthenticated and wrong-role requests must not cross portal APIs.
+  r = await request("/v1/admin/overview");
+  assert.equal(r.response.status, 401, "Signed-out users must not access admin overview");
+  r = await request("/v1/admin/overview", {}, patientCookie);
+  assert.equal(r.response.status, 403, "Patients must not access admin overview");
+  r = await request("/v1/admin/overview", {}, doctorCookie);
+  assert.equal(r.response.status, 403, "Doctors must not access admin overview");
+  r = await request("/v1/doctor/appointments");
+  assert.equal(r.response.status, 401, "Signed-out users must not access doctor appointments");
+  r = await request("/v1/doctor/appointments", {}, patientCookie);
+  assert.equal(r.response.status, 403, "Patients must not access doctor appointments");
+  r = await request("/v1/doctor/appointments", {}, adminCookie);
+  assert.equal(r.response.status, 403, "Admins must not access doctor-only appointments");
   const livePatientStream = await openNotificationStream(patientCookie);
   const liveDoctorStream = await openNotificationStream(doctorCookie);
   const liveAdminStream = await openNotificationStream(adminCookie);
