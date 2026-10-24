@@ -87,3 +87,13 @@ Development, test and QA environments use synthetic data only. No real patient h
 ## Current development direction
 
 **Booking, payment checkout and video are intentionally parked.** Continue building the remaining platform around them: doctor operations, care coordination, notifications, production storage, compliance/security controls, analytics, support and deployment readiness.
+
+## Latest functional work — 24 Oct 2026
+
+- [x] Medical intake API: validate appointment IDs and questionnaire field lengths; return field-level 400 errors instead of unhandled validation exceptions.
+- [x] Medical intake API: enforce patient ownership before read/write and persist drafts/completed consent state with an upsert.
+- [x] UAT coverage added for questionnaire draft save, fresh-GET persistence, invalid field lengths, and doctor access denial.
+- [x] UAT coverage added for document content ownership boundaries (doctor denied; unknown document returns not found).
+- [ ] Run API UAT integration suite and resolve any failures. CI status is not available from the latest commits yet.
+- [ ] Perform manual browser regression for patient login, questionnaire save/reload, and document preview/upload.
+
