@@ -17,8 +17,35 @@ export default function NotificationsPage() {
     if (!response.ok) { setError("Sign in to view your notifications."); return; }
     const data = await response.json(); setItems(data.notifications); setUnread(data.unreadCount);
   }
-  // eslint-disable-next-line react-hooks/set-state-in-effect
-  useEffect(() => { void load(); }, []);
+  useEffect(() => {
+    let active = true;
+    const refresh = () => {
+      fetch(`${API_URL}/v1/notifications?limit=100`, { credentials: "include" })
+        .then(async (response) => {
+          if (!response.ok) throw new Error("notifications unavailable");
+          return response.json();
+        })
+        .then((data) => {
+          if (!active) return;
+          setItems(data.notifications);
+          setUnread(data.unreadCount);
+          setError("");
+        })
+        .catch(() => {
+          if (active) setError("Sign in to view your notifications.");
+        });
+    };
+    refresh();
+    const stream = new EventSource(`${API_URL}/v1/notifications/stream`, { withCredentials: true });
+    stream.addEventListener("notification", refresh);
+    stream.onerror = () => {
+      // The persisted notification list remains available if the live stream disconnects.
+    };
+    return () => {
+      active = false;
+      stream.close();
+    };
+  }, []);
 
   async function mark(id: string) { await fetch(`${API_URL}/v1/notifications/${id}/read`, { method: "POST", credentials: "include" }); await load(); }
   async function markAll() { await fetch(`${API_URL}/v1/notifications/read-all`, { method: "POST", credentials: "include" }); await load(); }
