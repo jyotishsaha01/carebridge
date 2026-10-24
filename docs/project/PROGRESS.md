@@ -66,6 +66,7 @@
 - [x] Admin care-request queue
 - [x] Admin operational analytics
 - [x] Patient dashboard connected to live patient counts and notifications
+- [x] Doctor dashboard loads the authenticated doctor profile, real assigned appointments, intake status, and open-slot count from API endpoints
 - [x] Support request creation, status updates and admin queue
 - [x] Threaded support messages with patient/admin authorization checks
 - [x] Real-time notifications for support request creation, replies and status updates
@@ -102,6 +103,7 @@ Development, test and QA environments use synthetic data only. No real patient h
 - [x] Support workflow: added LOW/NORMAL/HIGH priority with 72/24/4-hour SLA deadlines, admin filters for overdue/escalated tickets, escalation/priority updates, notifications, and audit metadata.
 - [x] Support SLA filters parse true/false query values explicitly and combine status and overdue conditions without silently overriding each other.
 - [x] Support attachment persistence model links files to tickets and uploaders; attachment content is returned only after ticket-owner/admin authorization.
+- [x] Doctor dashboard no longer renders availability slots as fake patient appointments; it loads the real doctor appointment queue, supports status filtering, and links to the clinical workspace.
 - [x] UAT fixture uses a synthetic PDF signature and covers invalid metadata, malformed base64, and MIME/signature mismatch rejection.
 - [ ] Run API UAT integration suite and resolve any failures. CI status is not available from the latest commits yet.
 - [ ] Perform manual browser regression for patient login, questionnaire save/reload, and document preview/upload.
