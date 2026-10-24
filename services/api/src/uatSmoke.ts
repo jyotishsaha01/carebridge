@@ -122,8 +122,8 @@ async function main() {
   await livePatientStream.reader.cancel();
   const liveDoctorDocumentStream = await openNotificationStream(doctorCookie);
   const documentContent = Buffer.from("CareBridge UAT document");
-  r = await request("/v1/documents/upload-intent", { method: "POST", body: JSON.stringify({ fileName: "uat-note.txt", contentType: "text/plain", sizeBytes: documentContent.length, appointmentId }) }, patientCookie);
-  assert.equal(r.response.status, 201);
+  r = await request("/v1/documents/upload-intent", { method: "POST", body: JSON.stringify({ fileName: "uat-note.pdf", contentType: "application/pdf", sizeBytes: documentContent.length, appointmentId }) }, patientCookie);
+  assert.equal(r.response.status, 201, JSON.stringify(r.body));
   const documentId = r.body.document.id;
   r = await request("/v1/documents/" + documentId + "/content", { method: "PUT", body: JSON.stringify({ contentBase64: documentContent.toString("base64") }) }, patientCookie);
   assert.equal(r.response.status, 200);
