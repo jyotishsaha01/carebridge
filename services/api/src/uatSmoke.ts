@@ -86,6 +86,9 @@ async function main() {
   const patientCookie = await login(accounts.patient);
   const doctorCookie = await login(accounts.doctor);
   const adminCookie = await login(accounts.admin);
+  const livePatientStream = await openNotificationStream(patientCookie);
+  const liveDoctorStream = await openNotificationStream(doctorCookie);
+  const liveAdminStream = await openNotificationStream(adminCookie);
   r = await request("/v1/auth/me", {}, patientCookie);
   assert.equal(r.body.user.role, "PATIENT");
   const from = new Date();
