@@ -132,11 +132,21 @@ async function main() {
   r = await request("/v1/documents/upload-intent", { method: "POST", body: JSON.stringify({ fileName: "uat-note.pdf", contentType: "application/pdf", sizeBytes: documentContent.length, appointmentId }) }, patientCookie);
   assert.equal(r.response.status, 201, JSON.stringify(r.body));
   const documentId = r.body.document.id;
+  r = await request("/v1/documents/upload-intent", { method: "POST", body: JSON.stringify({ fileName: "wrong-appointment.pdf", contentType: "application/pdf", sizeBytes: 10, appointmentId: "missing-appointment-for-uat" }) }, patientCookie);
+  assert.equal(r.response.status, 404, "A patient cannot attach a document to an unknown or unowned appointment");
   // Unauthenticated users cannot create upload intents or fetch document content.
   r = await request("/v1/documents/upload-intent", { method: "POST", body: JSON.stringify({ fileName: "unauthorized.pdf", contentType: "application/pdf", sizeBytes: 10 }) });
   assert.equal(r.response.status, 401, "Signed-out users must not create document upload intents");
   r = await request("/v1/documents/" + documentId + "/content");
   assert.equal(r.response.status, 401, "Signed-out users must not read document content");
+  r = await request("/v1/documents");
+  assert.equal(r.response.status, 401, "Signed-out users must not list patient documents");
+  r = await request("/v1/documents/" + documentId);
+  assert.equal(r.response.status, 401, "Signed-out users must not read document metadata");
+  r = await request("/v1/documents/upload-intent", { method: "POST", body: JSON.stringify({ fileName: "doctor-upload.pdf", contentType: "application/pdf", sizeBytes: 10 }) }, doctorCookie);
+  assert.equal(r.response.status, 403, "Doctors must not create patient document upload intents");
+  r = await request("/v1/documents/upload-intent", { method: "POST", body: JSON.stringify({ fileName: "admin-upload.pdf", contentType: "application/pdf", sizeBytes: 10 }) }, adminCookie);
+  assert.equal(r.response.status, 403, "Admins must not create patient document upload intents");
   r = await request("/v1/documents/" + documentId + "/content", { method: "PUT", body: JSON.stringify({ contentBase64: documentContent.toString("base64") }) }, patientCookie);
   assert.equal(r.response.status, 200);
   r = await request("/v1/documents/" + documentId + "/content", { method: "PUT", body: JSON.stringify({ contentBase64: "%%%not-base64%%%" }) }, patientCookie);
