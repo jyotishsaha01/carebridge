@@ -20,7 +20,6 @@ export default function OperationsPage() {
   const [removingId, setRemovingId] = useState("");
 
   const load = useCallback(async () => {
-    setError("");
     try {
       const response = await fetch(`${API}/v1/doctor/availability`, {
         credentials: "include",
@@ -34,6 +33,7 @@ export default function OperationsPage() {
       }
       const data = await response.json();
       setSlots(Array.isArray(data) ? data : []);
+      setError("");
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Availability could not be loaded.");
     } finally {
