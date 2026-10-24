@@ -5,6 +5,7 @@ import { getCurrentUser } from "../../lib/api";
 import { useEffect, useState } from "react";
 import {
   getAppointments,
+  getActiveSessions,
   getCredentials,
   getDoctors,
   getPatients,
@@ -13,12 +14,15 @@ import {
   type AdminCredential,
   type AdminDoctor,
   type AdminPatient,
+  type AdminSession,
 } from "../../lib/api";
 
 export default function Operations() {
   const [doctors, setDoctors] = useState<AdminDoctor[]>([]);
   const [patients, setPatients] = useState<AdminPatient[]>([]);
   const [appointments, setAppointments] = useState<AdminAppointment[]>([]);
+  const [sessions, setSessions] = useState<AdminSession[]>([]);
+  const [loaded, setLoaded] = useState(false);
   const [selected, setSelected] = useState<AdminDoctor | null>(null);
   const [credentials, setCredentials] = useState<AdminCredential[]>([]);
   const [error, setError] = useState("");
@@ -28,10 +32,15 @@ export default function Operations() {
     try {
       const session = await getCurrentUser();
       if (session.user.role !== "ADMIN") throw new Error("Administrator access required.");
-      const [d, p, a] = await Promise.all([getDoctors(), getPatients(), getAppointments()]);
+      const [d, p, a, s] = await Promise.all([getDoctors(), getPatients(), getAppointments(), getActiveSessions()]);
       setDoctors(d);
       setPatients(p);
       setAppointments(a);
+      setSessions(s);
+      setLoaded(true);
+      const requestedDoctorId = new URLSearchParams(window.location.search).get("doctor");
+      const requestedDoctor = requestedDoctorId ? d.find((doctor) => doctor.id === requestedDoctorId) : undefined;
+      if (requestedDoctor) await selectDoctor(requestedDoctor);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Unable to load operations.");
     }
@@ -41,6 +50,15 @@ export default function Operations() {
     const timer = window.setTimeout(() => void load(), 0);
     return () => window.clearTimeout(timer);
   }, []);
+
+  useEffect(() => {
+    if (!loaded) return;
+    const timer = window.setTimeout(() => {
+      const sectionId = decodeURIComponent(window.location.hash.slice(1));
+      if (sectionId) document.getElementById(sectionId)?.scrollIntoView({ behavior: "smooth", block: "start" });
+    }, 80);
+    return () => window.clearTimeout(timer);
+  }, [loaded]);
 
   async function selectDoctor(doctor: AdminDoctor) {
     setSelected(doctor);
@@ -74,10 +92,13 @@ export default function Operations() {
         <p style={{ fontSize: 12, fontWeight: 800, letterSpacing: ".12em", color: "#64748b", marginTop: 28 }}>CAREBRIDGE · ADMIN CONTROL</p>
         <h1>Operational management</h1>
         <p style={{ color: "#64748b" }}>Review providers, inspect patients and monitor appointment activity.</p>
+        <nav aria-label="Operational details" style={{ display: "flex", flexWrap: "wrap", gap: 8, marginTop: 18 }}>
+          {[["patients", "Patients"], ["doctors", "Doctors"], ["verified-doctors", "Verified doctors"], ["appointments", "Appointments"], ["sessions", "Active sessions"]].map(([id, label]) => <Link key={id} href={"/operations#" + id} style={{ padding: "8px 11px", borderRadius: 10, background: "white", border: "1px solid #dfe8f0", color: "#1672b8", textDecoration: "none", fontSize: 13, fontWeight: 700 }}>{label}</Link>)}
+        </nav>
         {error && <div style={{ padding: 14, background: "#fff7ed", borderRadius: 12 }}>{error}</div>}
 
         <div style={{ display: "grid", gridTemplateColumns: "1.1fr .9fr", gap: 20, marginTop: 26 }}>
-          <section style={{ background: "white", border: "1px solid #e2e8f0", borderRadius: 22, padding: 22 }}>
+          <section id="doctors" style={{ background: "white", border: "1px solid #e2e8f0", borderRadius: 22, padding: 22, scrollMarginTop: 24 }}>
             <h2>Provider credentials</h2>
             {doctors.map((doctor) => (
               <button key={doctor.id} onClick={() => void selectDoctor(doctor)} style={{ display: "block", width: "100%", textAlign: "left", padding: 14, border: 0, borderTop: "1px solid #eef2f7", background: selected?.id === doctor.id ? "#f0f7fc" : "white" }}>
@@ -104,9 +125,9 @@ export default function Operations() {
             )}
           </section>
 
-          <section style={{ background: "white", border: "1px solid #e2e8f0", borderRadius: 22, padding: 22 }}>
+          <section id="patients" style={{ background: "white", border: "1px solid #e2e8f0", borderRadius: 22, padding: 22, scrollMarginTop: 24 }}>
             <h2>Patients</h2>
-            {patients.slice(0, 15).map((patient) => (
+            {patients.map((patient) => (
               <div key={patient.id} style={{ padding: "12px 0", borderTop: "1px solid #eef2f7" }}>
                 <b>{patientName(patient)}</b>
                 <div style={{ fontSize: 13, color: "#64748b" }}>{patient.user.email} · {patient.country} · {patient.user.isEmailVerified ? "Email verified" : "Email pending"}</div>
@@ -116,10 +137,42 @@ export default function Operations() {
           </section>
         </div>
 
-        <section style={{ marginTop: 20, background: "white", border: "1px solid #e2e8f0", borderRadius: 22, padding: 22 }}>
+        <section id="verified-doctors" style={{ marginTop: 20, background: "white", border: "1px solid #e2e8f0", borderRadius: 22, padding: 22, scrollMarginTop: 24 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
+            <h2>Verified doctors</h2>
+            <span style={{ color: "#64748b", fontSize: 13 }}>{doctors.filter((doctor) => doctor.isVerified && doctor.isActive).length} active and verified</span>
+          </div>
+          <p style={{ color: "#64748b", fontSize: 13 }}>These are the active verified provider profiles counted in the dashboard summary.</p>
+          {doctors.filter((doctor) => doctor.isVerified && doctor.isActive).map((doctor) => (
+            <button key={doctor.id} onClick={() => void selectDoctor(doctor)} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, width: "100%", textAlign: "left", padding: 14, border: 0, borderTop: "1px solid #eef2f7", background: selected?.id === doctor.id ? "#f0f7fc" : "white" }}>
+              <span><b>{doctor.name}</b><span style={{ display: "block", marginTop: 4, color: "#718096", fontSize: 13 }}>{doctor.specialty.name} · {doctor.location}</span></span>
+              <span style={{ color: "#1672b8", whiteSpace: "nowrap", fontSize: 13 }}>Inspect credentials →</span>
+            </button>
+          ))}
+          {!doctors.some((doctor) => doctor.isVerified && doctor.isActive) && <p>No active verified doctors.</p>}
+        </section>
+
+        <section id="sessions" style={{ marginTop: 20, background: "white", border: "1px solid #e2e8f0", borderRadius: 22, padding: 22, scrollMarginTop: 24 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
+            <h2>Active account sessions</h2>
+            <span style={{ color: "#64748b", fontSize: 13 }}>{sessions.length} shown</span>
+          </div>
+          <p style={{ color: "#64748b", fontSize: 13 }}>Current authenticated sign-ins, ordered by most recent activity. Session tokens are never exposed here.</p>
+          {sessions.map((session) => (
+            <div key={session.id} style={{ display: "grid", gridTemplateColumns: "1.3fr .6fr 1.2fr 1fr", gap: 12, alignItems: "center", padding: "14px 0", borderTop: "1px solid #eef2f7" }}>
+              <b>{session.user.email}</b>
+              <span style={{ color: "#64748b" }}>{session.user.role}</span>
+              <span style={{ color: "#64748b", fontSize: 13 }}>Last active: {new Date(session.lastSeenAt).toLocaleString()}</span>
+              <span style={{ color: "#64748b", fontSize: 13 }}>Expires: {new Date(session.expiresAt).toLocaleString()}</span>
+            </div>
+          ))}
+          {!sessions.length && <p>No active account sessions.</p>}
+        </section>
+
+        <section id="appointments" style={{ marginTop: 20, background: "white", border: "1px solid #e2e8f0", borderRadius: 22, padding: 22, scrollMarginTop: 24 }}>
           <h2>Appointment operations</h2>
           <div style={{ display: "grid", gap: 8 }}>
-            {appointments.slice(0, 20).map((appointment) => (
+            {appointments.map((appointment) => (
               <div key={appointment.id} style={{ display: "grid", gridTemplateColumns: "1.2fr 1.2fr 1fr 1fr", gap: 12, padding: 13, borderTop: "1px solid #eef2f7" }}>
                 <span>{patientName(appointment.patient)} · {appointment.patient.country}</span>
                 <span>{appointment.doctor.name} · {appointment.doctor.specialty.name}</span>

@@ -86,6 +86,24 @@ export async function registerAdminRoutes(app: FastifyInstance) {
     });
   });
 
+  app.get("/v1/admin/sessions", async (request, reply) => {
+    const user = await requireAdmin(request, reply);
+    if (!user) return;
+    const query = z.object({ limit: z.coerce.number().int().min(1).max(100).default(50) }).parse(request.query);
+    return prisma.session.findMany({
+      where: { revokedAt: null, expiresAt: { gt: new Date() } },
+      orderBy: { lastSeenAt: "desc" },
+      take: query.limit,
+      select: {
+        id: true,
+        createdAt: true,
+        lastSeenAt: true,
+        expiresAt: true,
+        user: { select: { email: true, role: true } },
+      },
+    });
+  });
+
   app.get("/v1/admin/audit-logs", async (request, reply) => {
     const user = await requireAdmin(request, reply);
     if (!user) return;

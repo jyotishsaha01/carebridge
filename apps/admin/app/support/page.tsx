@@ -23,6 +23,7 @@ export default function AdminSupportPage() {
     if (!r.ok) throw new Error("Unable to load support queue.");
     const rows: Ticket[] = await r.json(); setTickets(rows);
     if (selected) { const updated = rows.find(t => t.id === selected.id); if (updated) setSelected(updated); }
+    return rows;
   }
   async function openTicket(ticket: Ticket) {
     setSelected(ticket); setStatus(ticket.status); setError("");
@@ -30,7 +31,7 @@ export default function AdminSupportPage() {
     if (!r.ok) { setError("Unable to load this conversation."); return; }
     setThread(await r.json());
   }
-  useEffect(() => { const timer = window.setTimeout(() => { void load().catch(e => setError(e instanceof Error ? e.message : "Unable to load support queue.")); }, 0); return () => window.clearTimeout(timer); }, []);
+  useEffect(() => { const timer = window.setTimeout(() => { void (async () => { try { const rows = await load(); const ticketId = new URLSearchParams(window.location.search).get("ticket"); const ticket = ticketId ? rows.find(item => item.id === ticketId) : undefined; if (ticket) await openTicket(ticket); } catch (e) { setError(e instanceof Error ? e.message : "Unable to load support queue."); } })(); }, 0); return () => window.clearTimeout(timer); }, []);
   async function sendReply() {
     if (!selected || !reply.trim()) return;
     setBusy(true); setError("");
