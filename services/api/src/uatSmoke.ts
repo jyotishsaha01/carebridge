@@ -129,7 +129,7 @@ async function main() {
   await waitForLiveNotification(livePatientStream, "Prescription available");
   await livePatientStream.reader.cancel();
   const liveDoctorDocumentStream = await openNotificationStream(doctorCookie);
-  const documentContent = Buffer.from("CareBridge UAT document");
+  const documentContent = Buffer.from("%PDF-1.7\n% CareBridge UAT synthetic document\n");
   r = await request("/v1/documents/upload-intent", { method: "POST", body: JSON.stringify({ fileName: "uat-note.pdf", contentType: "application/pdf", sizeBytes: documentContent.length, appointmentId }) }, patientCookie);
   assert.equal(r.response.status, 201, JSON.stringify(r.body));
   const documentId = r.body.document.id;
@@ -153,6 +153,9 @@ async function main() {
   assert.equal(r.response.status, 403, "Admins must not create patient document upload intents");
   r = await request("/v1/documents/" + documentId + "/content", { method: "PUT", body: JSON.stringify({ contentBase64: documentContent.toString("base64") }) }, patientCookie);
   assert.equal(r.response.status, 200);
+  const forgedContent = Buffer.alloc(documentContent.length, 0x41);
+  r = await request("/v1/documents/" + documentId + "/content", { method: "PUT", body: JSON.stringify({ contentBase64: forgedContent.toString("base64") }) }, patientCookie);
+  assert.equal(r.response.status, 400, "A PDF upload must reject content with a mismatched file signature");
   r = await request("/v1/documents/" + documentId + "/content", { method: "PUT", body: JSON.stringify({ contentBase64: "%%%not-base64%%%" }) }, patientCookie);
   assert.notEqual(r.response.status, 200, "Malformed base64 must be rejected");
   r = await request("/v1/documents/" + documentId + "/content", { method: "PUT", body: JSON.stringify({ contentBase64: Buffer.from("different length").toString("base64") }) }, patientCookie);
