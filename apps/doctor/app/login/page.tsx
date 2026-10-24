@@ -19,7 +19,10 @@ export default function DoctorLogin() {
       const body = await response.json();
       if (!response.ok) throw new Error(body.error ?? "Unable to sign in.");
       if (body.user?.role !== "DOCTOR") {
-        await fetch(API + "/v1/auth/logout", { method: "POST", credentials: "include" }).catch(() => undefined);
+        const logoutResponse = await fetch(API + "/v1/auth/logout", { method: "POST", credentials: "include" }).catch(() => null);
+        if (!logoutResponse?.ok) {
+          throw new Error("This account is not registered as a doctor, and the session could not be cleared. Check your connection and retry before switching portals.");
+        }
         throw new Error("This account is not registered as a doctor. Choose Patient or Admin sign-in instead.");
       }
       router.push("/dashboard");
