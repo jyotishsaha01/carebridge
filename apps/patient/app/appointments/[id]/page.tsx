@@ -81,7 +81,9 @@ export default function AppointmentPage() {
       .then((slots) => {
         if (!active) return;
         const usable = slots.filter((slot) =>
-          slot.startsAt !== data.scheduledAt && new Date(slot.startsAt) > new Date(),
+          slot.startsAt !== data.scheduledAt &&
+          new Date(slot.startsAt) > new Date() &&
+          new Date(slot.endsAt).getTime() - new Date(slot.startsAt).getTime() >= data.durationMin * 60_000,
         );
         setAvailableSlots(usable);
         setSelectedSlot((current) => usable.some((slot) => slot.startsAt === current) ? current : (usable[0]?.startsAt ?? ""));
