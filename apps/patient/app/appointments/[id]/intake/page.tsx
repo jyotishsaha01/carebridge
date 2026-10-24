@@ -70,11 +70,15 @@ export default function IntakePage() {
     if (saving || loadError) return;
     setSaving(true);
     setMessage("");
+    setMessageKind("success");
+    const controller = new AbortController();
+    const timeout = window.setTimeout(() => controller.abort(), 15000);
     try {
       const response = await fetch(`${API}/v1/appointments/${encodeURIComponent(id)}/intake`, {
         method: "PUT",
         credentials: "include",
         headers: { "content-type": "application/json" },
+        signal: controller.signal,
         body: JSON.stringify({
           reasonForVisit: data.reasonForVisit ?? "",
           symptoms: data.symptoms ?? "",
@@ -88,8 +92,9 @@ export default function IntakePage() {
       });
       if (!response.ok) {
         const payload = await response.json().catch(() => null);
-        if (response.status === 401 || response.status === 403) throw new Error("Your patient session has expired. Sign in and try again.");
-        throw new Error(payload?.error ?? "The questionnaire was not saved. Please check your connection and retry.");
+        if (response.status === 401 || response.status === 403) throw new Error("Your patient session has expired. Sign in again and retry.");
+        if (response.status === 404) throw new Error("This appointment was not found. Return to your appointments and reopen the questionnaire.");
+        throw new Error(payload?.error ?? `The questionnaire was not saved (HTTP ${response.status}). Please retry.`);
       }
       const saved = (await response.json()) as Intake;
       setData(saved);
@@ -97,9 +102,13 @@ export default function IntakePage() {
       setMessage(consent ? "Questionnaire submitted successfully." : "Draft saved successfully. You can return to finish it later.");
       setMessageKind("success");
     } catch (cause) {
-      setMessage(cause instanceof Error ? cause.message : "The questionnaire could not be saved.");
+      const timedOut = cause instanceof DOMException && cause.name === "AbortError";
+      setMessage(timedOut
+        ? "Saving took too long. Your answers are still on this page. Check that the API is running, then try again."
+        : cause instanceof Error ? cause.message : "The questionnaire could not be saved. Your answers remain on this page.");
       setMessageKind("error");
     } finally {
+      window.clearTimeout(timeout);
       setSaving(false);
     }
   }
@@ -107,7 +116,14 @@ export default function IntakePage() {
   if (loading) return <main style={{ padding: 48, fontFamily: "system-ui" }} role="status">Loading questionnaire…</main>;
 
   return (
-    <main style={{ maxWidth: 900, margin: "auto", padding: "48px 24px", fontFamily: "Inter,system-ui,sans-serif", color: "#172334" }}>
+    <main style={{ maxWidth: 900, margin: "auto", padding: "24px 24px 48px", fontFamily: "Inter,system-ui,sans-serif", color: "#172334" }}>
+      <header style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16, padding: "8px 0 22px", marginBottom: 22, borderBottom: "1px solid #dce7e3" }}>
+        <Link href="/dashboard" aria-label="CareBridge patient dashboard" style={{ display: "inline-flex", alignItems: "center", gap: 12, textDecoration: "none", color: "#19312c", fontSize: 24, fontWeight: 800 }}>
+          <span aria-hidden="true" style={{ display: "grid", placeItems: "center", width: 42, height: 42, borderRadius: 12, background: "#e8f5ef" }}>C</span>
+          CareBridge
+        </Link>
+        <Link href="/dashboard" style={{ color: "#1672b8", fontWeight: 700 }}>Dashboard</Link>
+      </header>
       <Link href={`/appointments/${encodeURIComponent(id)}`} style={{ color: "#1672b8" }}>← Appointment</Link>
       <p style={{ marginTop: 28, fontSize: 12, fontWeight: 800, letterSpacing: ".12em", color: "#64748b" }}>CAREBRIDGE · MEDICAL INTAKE</p>
       <h1>Prepare for your consultation.</h1>
