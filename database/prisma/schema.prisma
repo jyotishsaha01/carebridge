@@ -373,6 +373,9 @@ model SupportTicket {
   category   String
   message    String
   status     String @default("OPEN")
+  priority   String @default("NORMAL")
+  slaDueAt   DateTime?
+  escalatedAt DateTime?
   createdAt  DateTime            @default(now())
   updatedAt  DateTime            @updatedAt
   resolvedAt DateTime?
@@ -380,6 +383,8 @@ model SupportTicket {
   messages   SupportMessage[]
   @@index([userId, status, createdAt])
   @@index([status, updatedAt])
+  @@index([priority, slaDueAt])
+  @@index([escalatedAt, status])
 }
 
 
