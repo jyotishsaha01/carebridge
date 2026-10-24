@@ -3,6 +3,7 @@ import { z } from "zod";
 import { prisma } from "./server";
 import { getAuthenticatedUser, requireRole } from "./auth";
 import { recordAudit } from "./audit";
+import { createNotification, notifyUsersByRole, type NotificationRole } from "./notificationsPrototype";
 
 const ticketInput = z.object({
   category: z.string().trim().min(2).max(80),
@@ -31,6 +32,7 @@ export async function registerSupportRoutes(app: FastifyInstance) {
     const input = ticketInput.parse(request.body);
     const ticket = await prisma.supportTicket.create({ data: { userId: user.id, ...input } });
     await recordAudit(request, { actorUserId: user.id, action: "SUPPORT_TICKET_CREATED", resourceType: "SupportTicket", resourceId: ticket.id, outcome: "SUCCESS" });
+    await notifyUsersByRole("ADMIN", "SUPPORT", "New support request", "A user submitted a support request that needs review.");
     return reply.code(201).send(ticket);
   });
 
@@ -56,6 +58,10 @@ export async function registerSupportRoutes(app: FastifyInstance) {
       data: { status: input.status, resolvedAt: ["RESOLVED", "CLOSED"].includes(input.status) ? new Date() : null },
     });
     await recordAudit(request, { actorUserId: user.id, action: "ADMIN_SUPPORT_TICKET_UPDATED", resourceType: "SupportTicket", resourceId: ticket.id, outcome: "SUCCESS", metadata: { status: input.status } });
+    const ticketOwner = await prisma.user.findUnique({ where: { id: ticket.userId }, select: { role: true } });
+    if (ticketOwner && ["PATIENT", "DOCTOR", "ADMIN"].includes(ticketOwner.role)) {
+      await createNotification({ userId: ticket.userId, role: ticketOwner.role as NotificationRole, type: "SUPPORT", title: "Support request updated", body: "Your support request status is now " + input.status + "." });
+    }
     return ticket;
   });
 }
