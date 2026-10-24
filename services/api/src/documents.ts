@@ -30,7 +30,7 @@ export async function registerDocumentRoutes(app: FastifyInstance){
   const document=await prisma.medicalDocument.findFirst({where:{id:documentId,patientId:auth.patient.id}});
   if(!document)return reply.code(404).send({error:"Document not found"});
   try{
-    const content=await (await import("./documentStoragePrototype")).readDocument(document.storageKey);
+    const content=await (await import("./documentStoragePrototype.js")).readDocument(document.storageKey);
     await recordAudit(request,{actorUserId:auth.user.id,action:"PATIENT_DOCUMENT_CONTENT_VIEWED",resourceType:"MedicalDocument",resourceId:document.id,outcome:"SUCCESS"});
     return {contentBase64:content.toString("base64"),contentType:document.contentType,originalFileName:document.originalFileName};
   }catch{return reply.code(404).send({error:"Document content is not available"});}
