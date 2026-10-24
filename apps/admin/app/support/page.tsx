@@ -38,7 +38,7 @@ export default function AdminSupportPage() {
     if (!r.ok) { setError("Unable to load this conversation."); return; }
     setThread(await r.json());
   }
-  useEffect(() => { void load().catch(e => setError(e instanceof Error ? e.message : "Unable to load support queue.")); }, [load]);
+  useEffect(() => { const timer = window.setTimeout(() => { void load().catch(e => setError(e instanceof Error ? e.message : "Unable to load support queue.")); }, 0); return () => window.clearTimeout(timer); }, [load]);
   async function sendReply() {
     if (!selected || !reply.trim()) return;
     setBusy(true); setError("");
