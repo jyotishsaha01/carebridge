@@ -12,7 +12,7 @@ type Appointment = {
   medicalIntake: { status: string } | null;
   consultation: { status: string } | null;
 };
-type Doctor = { name: string; specialty?: { name: string } };
+type Doctor = { name: string; status?: string; isVerified?: boolean; specialty?: { name: string } };
 type Slot = { id: string; status: string; startsAt: string };
 
 function patientName(a: Appointment) {
@@ -30,6 +30,10 @@ export default function DoctorDashboard() {
   const [filter, setFilter] = useState("ALL");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
+  const [refreshKey, setRefreshKey] = useState(0);
+  const upcomingCount = appointments.filter((appointment) => new Date(appointment.scheduledAt) >= new Date() && !["CANCELLED", "COMPLETED"].includes(appointment.status)).length;
+  const inProgressCount = appointments.filter((appointment) => appointment.consultation?.status === "IN_PROGRESS").length;
+  const completedCount = appointments.filter((appointment) => appointment.consultation?.status === "COMPLETED" || appointment.status === "COMPLETED").length;
 
   useEffect(() => {
     let stream: EventSource | null = null;
@@ -76,7 +80,7 @@ export default function DoctorDashboard() {
       cancelled = true;
       stream?.close();
     };
-  }, []);
+  }, [refreshKey]);
 
   async function cancelAppointment(appointmentId: string) {
     const reason = window.prompt("Enter a cancellation reason for the patient (3–1,000 characters):");
@@ -142,7 +146,15 @@ export default function DoctorDashboard() {
           <Link href="/profile" style={{ padding: "10px 14px", borderRadius: 10, background: "white", border: "1px solid #dfe8f0", color: "#1672b8", textDecoration: "none" }}>Profile & credentials</Link>
         </nav>
 
-        {error && <div role="alert" style={{ padding: 14, background: "#fff7ed", borderRadius: 14, marginBottom: 18, color: "#9a3412" }}>{error}</div>}
+        {error && <div role="alert" style={{ padding: 14, background: "#fff7ed", borderRadius: 14, marginBottom: 18, color: "#9a3412", display: "flex", justifyContent: "space-between", gap: 12, alignItems: "center", flexWrap: "wrap" }}><span>{error}</span><button onClick={() => { setError(""); setLoading(true); setRefreshKey((value) => value + 1); }} style={{ padding: "9px 12px", background: "white", border: "1px solid #e6c49b", borderRadius: 10, fontWeight: 700, color: "#9a3412" }}>Retry loading</button></div>}
+        {doctor && !doctor.isVerified && <section role="status" style={{ background: doctor.status === "REJECTED" ? "#fff7f7" : "#fff9ec", border: "1px solid " + (doctor.status === "REJECTED" ? "#f1caca" : "#f2d9a6"), borderRadius: 18, padding: 20, marginBottom: 20 }}>
+          <h2 style={{ margin: "0 0 7px", fontSize: 18 }}>{doctor.status === "REJECTED" ? "Credential review needs attention" : "Your profile is awaiting verification"}</h2>
+          <p style={{ color: "#6b7280", margin: "0 0 12px" }}>Patients can only find verified, active doctors. Review your submitted license or submit corrected details so the admin team can complete verification.</p>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 12 }}><Link href="/profile" style={{ color: "#1672b8", fontWeight: 700 }}>View credential status</Link><Link href="/onboarding" style={{ color: "#1672b8", fontWeight: 700 }}>Submit / resubmit license</Link></div>
+        </section>}
+        <section aria-label="Doctor performance overview" style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(150px,1fr))", gap: 12, marginBottom: 20 }}>
+          {[[ "Upcoming", upcomingCount ], [ "In progress", inProgressCount ], [ "Completed", completedCount ], [ "Open slots", availableSlots ]].map(([label, value]) => <div key={label} style={{ background: "white", border: "1px solid #e1e9f1", borderRadius: 16, padding: 17 }}><strong style={{ fontSize: 27 }}>{value}</strong><div style={{ color: "#64788d", marginTop: 4, fontSize: 13 }}>{label}</div></div>)}
+        </section>
         <section style={{ background: "white", border: "1px solid #e1e9f1", borderRadius: 24, padding: 24 }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 20, flexWrap: "wrap", marginBottom: 18 }}>
             <div><h2 style={{ margin: 0 }}>Appointment queue</h2><p style={{ color: "#718398", margin: "6px 0 0" }}>Appointments assigned to your doctor account.</p></div>

@@ -317,6 +317,47 @@ async function main() {
   assert.equal(r.response.status, 200);
   r = await request("/v1/admin/appointments?limit=20", {}, adminCookie);
   assert.ok(r.body.some((a: any) => a.id === appointmentId));
+
+  r = await request("/v1/patient/care-requests", { method: "POST", body: JSON.stringify({ type: "DIAGNOSTIC", title: "UAT diagnostic request", description: "Synthetic request for admin approval flow." }) }, patientCookie);
+  assert.equal(r.response.status, 201, "Patient should be able to submit a care request");
+  const careRequestId = r.body.id;
+  r = await request("/v1/admin/care-requests?status=REQUESTED&limit=100", {}, adminCookie);
+  assert.equal(r.response.status, 200);
+  assert.ok(r.body.some((item: any) => item.id === careRequestId), "Admin should see newly submitted patient care requests");
+  r = await request("/v1/admin/care-requests/" + careRequestId, { method: "PATCH", body: JSON.stringify({ status: "APPROVED" }) }, adminCookie);
+  assert.equal(r.response.status, 200, "Admin should be able to approve a patient care request");
+  r = await request("/v1/patient/care-requests", {}, patientCookie);
+  assert.ok(r.body.some((item: any) => item.id === careRequestId && item.status === "APPROVED"), "Patient should see the admin decision");
+
+  r = await request("/v1/doctor/credentials", { method: "POST", body: JSON.stringify({ type: "Medical license", licenseNumber: "UAT-LOCAL-MEDICAL-LICENSE", jurisdiction: "UAT jurisdiction", documentName: "UAT reference only" }) }, doctorCookie);
+  assert.ok([200, 201].includes(r.response.status), "Doctor should be able to submit or resubmit a credential");
+  const credentialId = r.body.id;
+  r = await request("/v1/admin/doctors?verified=all", {}, adminCookie);
+  const seededDoctorId = r.body.find((item: any) => item.slug === "dr-anil-sharma")?.id;
+  assert.ok(seededDoctorId, "Expected the seeded UAT doctor profile");
+  r = await request("/v1/admin/doctors/" + seededDoctorId + "/verification", { method: "POST", body: JSON.stringify({ verified: true }) }, adminCookie);
+  assert.equal(r.response.status, 409, "Admin verification shortcut must reject unreviewed licenses");
+  r = await request("/v1/doctors?limit=10");
+  assert.equal(r.response.status, 200);
+  assert.ok(!r.body.some((item: any) => item.slug === "dr-anil-sharma"), "Doctor awaiting license review must not appear in patient search");
+
+  r = await request("/v1/admin/credentials/" + credentialId, { method: "PATCH", body: JSON.stringify({ status: "APPROVED" }) }, adminCookie);
+  assert.equal(r.response.status, 200, "Admin should be able to approve the submitted license");
+  r = await request("/v1/admin/doctors?verified=all", {}, adminCookie);
+  assert.ok(r.body.some((item: any) => item.slug === "dr-anil-sharma" && item.isVerified), "Approving credentials should verify the doctor");
+  r = await request("/v1/doctors?limit=10");
+  assert.ok(r.body.some((item: any) => item.slug === "dr-anil-sharma"), "Approved doctor should appear in patient search");
+
+  r = await request("/v1/admin/credentials/" + credentialId, { method: "PATCH", body: JSON.stringify({ status: "REJECTED" }) }, adminCookie);
+  assert.equal(r.response.status, 200);
+  r = await request("/v1/doctors?limit=10");
+  assert.ok(!r.body.some((item: any) => item.slug === "dr-anil-sharma"), "Rejected license must remove doctor from patient search");
+  r = await request("/v1/admin/credentials/" + credentialId, { method: "PATCH", body: JSON.stringify({ status: "PENDING" }) }, adminCookie);
+  assert.equal(r.response.status, 200);
+  r = await request("/v1/admin/credentials/" + credentialId, { method: "PATCH", body: JSON.stringify({ status: "APPROVED" }) }, adminCookie);
+  assert.equal(r.response.status, 200);
+  r = await request("/v1/doctors?limit=10");
+  assert.ok(r.body.some((item: any) => item.slug === "dr-anil-sharma"), "Approved resubmitted credential should restore patient visibility");
   console.log("CAREBRIDGE UAT PASS");
 }
 main().catch((error) => { console.error("CAREBRIDGE UAT FAIL"); console.error(error); process.exit(1); });
