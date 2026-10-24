@@ -95,6 +95,7 @@ Development, test and QA environments use synthetic data only. No real patient h
 ## Latest functional work — 24 Oct 2026
 
 - [x] Added fail-closed malware scan enforcement to patient document uploads; scan rejections and unavailable scanner states are audited, and no bytes are stored unless the scanner returns a clean verdict.
+- [x] Removed orphaned document metadata if the content scan rejects the upload or the scanner is unavailable.
 - [ ] Configure `MALWARE_SCANNER_URL` and validate the external scanner/credentials against synthetic test files in the target environment before release.
 
 - [x] Medical intake API: validate appointment IDs and questionnaire field lengths; return field-level 400 errors instead of unhandled validation exceptions.
@@ -122,9 +123,9 @@ Development, test and QA environments use synthetic data only. No real patient h
 - [x] UAT fixture uses a synthetic PDF signature and covers invalid metadata, malformed base64, and MIME/signature mismatch rejection.
 - [x] Added an S3-compatible object storage provider using built-in SigV4 signing, server-side AES256 encryption headers, and 5-minute signed download URLs; document writes/reads now go through the provider abstraction.
 - [x] Production configuration fails closed if local storage is selected or required S3 credentials/encryption settings are missing; added storage provider validation tests.
-- [ ] Provision the private bucket, least-privilege IAM credentials, lifecycle/retention policy, malware scanning, and verify endpoint/region/encryption configuration in the target environment.
-- [x] CareBridge foundation checks and API UAT integration passed for the current PR #42 head; QA-only smoke was skipped because this is not a QA-targeted branch.
-- [ ] Rebase the remaining open PR branches against current `main` and rerun latest-head CI; several branches overlap in `services/api/src/documents.ts`, `services/api/src/support.ts`, and `services/api/src/uatSmoke.ts`, and GitHub currently reports them as non-mergeable.
+- [ ] Provision the private bucket, least-privilege IAM credentials, lifecycle/retention policy, and verify endpoint/region/encryption configuration in the target environment.
+- [x] Current-main CI passed for merged PRs #42, #27, #31, #26, #28, and #35; the current-main malware-scanning PR #34 also passed foundation checks and API UAT before merge.
+- [x] Reviewed all opened PRs from the October 24 backlog; no PRs remain open. Closed #24 as redundant because questionnaire validation/persistence tests were already on `main`, and closed stale #41 because its old doctor workspace would regress newer clinical features.
 - [x] Removed the hard-coded demo patient fallback from the live doctor workspace; loading, empty, API-error, and retry states are shown instead.
 - [ ] Perform manual browser regression for patient login, questionnaire save/reload, and document preview/upload.
 
