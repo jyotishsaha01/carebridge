@@ -58,8 +58,8 @@ export default function DocumentsPanel() {
       const content=await contentResponse.json() as {contentBase64:string;contentType:string;originalFileName:string};
       const bytes=Uint8Array.from(atob(content.contentBase64),(char)=>char.charCodeAt(0));
       const url=URL.createObjectURL(new Blob([bytes],{type:content.contentType}));
-      previewWindow.location.href=url;
       previewWindow.document.title=content.originalFileName||"CareBridge document";
+      previewWindow.location.href=url;
       window.setTimeout(()=>URL.revokeObjectURL(url),60000);
       setMessage("Document opened. Local development storage is in use; production cloud storage and signed access are not configured yet.");
     }catch(error){
