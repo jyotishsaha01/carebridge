@@ -98,7 +98,11 @@ export default function DoctorDashboard() {
       setAppointments((current) => current.map((appointment) =>
         appointment.id === appointmentId ? { ...appointment, status: "CANCELLED" } : appointment
       ));
-      setAvailableSlots((count) => count + 1);
+      const slotsResponse = await fetch(API_URL + "/v1/doctor/availability", { credentials: "include" });
+      if (slotsResponse.ok) {
+        const slots = await slotsResponse.json() as Slot[];
+        setAvailableSlots(Array.isArray(slots) ? slots.filter((slot) => slot.status === "AVAILABLE").length : 0);
+      }
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Unable to cancel appointment.");
     }
