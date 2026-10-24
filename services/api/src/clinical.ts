@@ -177,6 +177,27 @@ export async function registerClinicalRoutes(app: FastifyInstance) {
     return consultation;
   });
 
+  app.get("/v1/doctor/appointments/:appointmentId/clinical-record", async (request, reply) => {
+    const user = await requireDoctor(request, reply);
+    if (!user?.doctor) return;
+    const { appointmentId } = z.object({ appointmentId: z.string().trim().min(1) }).parse(request.params);
+    const appointment = await prisma.appointment.findFirst({
+      where: { id: appointmentId, doctorId: user.doctor.id },
+      select: { id: true },
+    });
+    if (!appointment) return reply.code(404).send({ error: "Appointment not found" });
+
+    const consultation = await prisma.consultation.findFirst({
+      where: { appointmentId, doctorId: user.doctor.id },
+      include: {
+        clinicalNotes: { orderBy: { createdAt: "desc" } },
+        prescription: { include: { items: true } },
+        followUps: { orderBy: { createdAt: "desc" } },
+      },
+    });
+    return { consultation };
+  });
+
   app.put("/v1/doctor/consultations/:consultationId/note", async (request, reply) => {
     const user = await requireDoctor(request, reply);
     if (!user?.doctor) return;
