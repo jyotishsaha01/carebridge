@@ -133,6 +133,9 @@ async function main() {
   r = await request("/v1/documents/upload-intent", { method: "POST", body: JSON.stringify({ fileName: "uat-note.pdf", contentType: "application/pdf", sizeBytes: documentContent.length, appointmentId }) }, patientCookie);
   assert.equal(r.response.status, 201, JSON.stringify(r.body));
   const documentId = r.body.document.id;
+  r = await request("/v1/documents", {}, secondPatientCookie);
+  assert.equal(r.response.status, 200);
+  assert.ok(!r.body.some((document: any) => document.id === documentId), "Document lists must be scoped to the authenticated patient");
   r = await request("/v1/documents/upload-intent", { method: "POST", body: JSON.stringify({ fileName: "wrong-appointment.pdf", contentType: "application/pdf", sizeBytes: 10, appointmentId: "missing-appointment-for-uat" }) }, patientCookie);
   assert.equal(r.response.status, 404, "A patient cannot attach a document to an unknown or unowned appointment");
   // Unauthenticated users cannot create upload intents or fetch document content.
