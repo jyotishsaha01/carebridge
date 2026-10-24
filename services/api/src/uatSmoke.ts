@@ -201,6 +201,12 @@ async function main() {
   const documentId = r.body.document.id;
   r = await request("/v1/documents/" + documentId + "/content", { method: "PUT", body: JSON.stringify({ contentBase64: documentContent.toString("base64") }) }, patientCookie);
   assert.equal(r.response.status, 200);
+
+  // Document ownership boundary: only the owning patient can retrieve document content.
+  r = await request("/v1/documents/" + documentId + "/content", {}, doctorCookie);
+  assert.equal(r.response.status, 403, "Doctor role must not use the patient document-content endpoint");
+  r = await request("/v1/documents/not-a-real-document-id/content", {}, patientCookie);
+  assert.equal(r.response.status, 404, "A patient must not retrieve content for an unknown document");
   await waitForLiveNotification(liveDoctorDocumentStream, "Patient document uploaded");
   await liveDoctorDocumentStream.reader.cancel();
   r = await request(`/v1/doctor/consultations/${consultationId}/follow-up`, { method: "POST", body: JSON.stringify({ instructions: "UAT follow-up", status: "RECOMMENDED" }) }, doctorCookie);
