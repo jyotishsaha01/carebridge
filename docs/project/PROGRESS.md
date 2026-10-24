@@ -107,6 +107,7 @@ Development, test and QA environments use synthetic data only. No real patient h
 - [x] Doctor appointment queue supports reasoned cancellation for future booked appointments with ownership/status checks, transactional slot release, patient notification, and audit logging.
 - [x] Doctor consultation transitions are restricted to starting a booked appointment and completing an in-progress consultation; appointment and consultation states update in one transaction, with stale-state conflicts returned clearly to the workspace.
 - [x] Clinical notes are restricted to in-progress consultations; prescriptions and follow-ups require an in-progress or completed consultation, and the doctor workspace surfaces lifecycle API errors.
+- [x] Added a doctor-scoped clinical-record read endpoint and reloads saved consultation summary, latest note, prescription item, and follow-up when switching appointments in the doctor workspace.
 - [x] UAT fixture uses a synthetic PDF signature and covers invalid metadata, malformed base64, and MIME/signature mismatch rejection.
 - [ ] Run API UAT integration suite and resolve any failures. CI status is not available from the latest commits yet.
 - [ ] Perform manual browser regression for patient login, questionnaire save/reload, and document preview/upload.
