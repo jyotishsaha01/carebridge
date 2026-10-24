@@ -4,6 +4,7 @@ import { z } from "zod";
 import { prisma } from "./server";
 import { getAuthenticatedUser, requireRole } from "./auth";
 import { FakePaymentProvider } from "./payments";
+import { createNotification, notifyUsersByRole } from "./notificationsPrototype";
 
 const provider = new FakePaymentProvider();
 
@@ -129,6 +130,18 @@ export async function registerPaymentRoutes(app: FastifyInstance) {
     await prisma.$executeRaw(Prisma.sql`
       UPDATE "PaymentIntent" SET "status" = ${event.status}, "updatedAt" = CURRENT_TIMESTAMP WHERE "id" = ${event.paymentId} OR "providerPaymentId" = ${event.paymentId}
     `);
+    const recipients = await prisma.$queryRaw<Array<{ patientUserId: string }>>(Prisma.sql`
+      SELECT patient."userId" AS "patientUserId"
+      FROM "PaymentIntent" payment
+      INNER JOIN "Patient" patient ON patient."id" = payment."patientId"
+      WHERE payment."id" = ${event.paymentId} OR payment."providerPaymentId" = ${event.paymentId}
+      LIMIT 1
+    `);
+    if (recipients[0]) {
+      const title = event.status === "SUCCEEDED" ? "Payment confirmed" : event.status === "REFUNDED" ? "Payment refunded" : event.status === "FAILED" ? "Payment failed" : "Payment cancelled";
+      await createNotification({ userId: recipients[0].patientUserId, role: "PATIENT", type: "SYSTEM", title, body: "Your consultation payment status is " + event.status.toLowerCase() + "." });
+      await notifyUsersByRole("ADMIN", "SYSTEM", "Consultation payment updated", "A consultation payment status changed to " + event.status.toLowerCase() + ".");
+    }
     return { applied: true, status: event.status };
   });
 }
