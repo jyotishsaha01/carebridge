@@ -184,6 +184,7 @@ export async function registerClinicalRoutes(app: FastifyInstance) {
     const input = notePayload.parse(request.body);
     const consultation = await prisma.consultation.findFirst({ where: { id: consultationId, doctorId: user.doctor.id } });
     if (!consultation) return reply.code(404).send({ error: "Consultation not found" });
+    if (consultation.status !== "IN_PROGRESS") return reply.code(409).send({ error: "Clinical notes can only be saved while the consultation is in progress" });
     const note = await prisma.clinicalNote.create({ data: { consultationId, ...input } });
     await recordAudit(request, { actorUserId: user.id, action: "CLINICAL_NOTE_CREATED", resourceType: "ClinicalNote", resourceId: note.id, outcome: "SUCCESS" });
     return note;
@@ -196,6 +197,7 @@ export async function registerClinicalRoutes(app: FastifyInstance) {
     const input = prescriptionPayload.parse(request.body);
     const consultation = await prisma.consultation.findFirst({ where: { id: consultationId, doctorId: user.doctor.id } });
     if (!consultation) return reply.code(404).send({ error: "Consultation not found" });
+    if (consultation.status !== "IN_PROGRESS" && consultation.status !== "COMPLETED") return reply.code(409).send({ error: "Prescriptions can only be saved for an active or completed consultation" });
     const prescription = await prisma.$transaction(async tx => {
       await tx.prescriptionItem.deleteMany({ where: { prescription: { consultationId } } });
       return tx.prescription.upsert({ where: { consultationId }, update: { instructions: input.instructions, items: { create: input.items } }, create: { consultationId, instructions: input.instructions, items: { create: input.items } }, include: { items: true } });
@@ -212,6 +214,7 @@ export async function registerClinicalRoutes(app: FastifyInstance) {
     const input = followUpPayload.parse(request.body);
     const consultation = await prisma.consultation.findFirst({ where: { id: consultationId, doctorId: user.doctor.id } });
     if (!consultation) return reply.code(404).send({ error: "Consultation not found" });
+    if (consultation.status !== "IN_PROGRESS" && consultation.status !== "COMPLETED") return reply.code(409).send({ error: "Follow-ups can only be added for an active or completed consultation" });
     const followUp = await prisma.followUp.create({ data: { consultationId, ...input } });
     await recordAudit(request, { actorUserId: user.id, action: "CLINICAL_FOLLOWUP_CREATED", resourceType: "FollowUp", resourceId: followUp.id, outcome: "SUCCESS" });
     await notifyPatient(consultation.patientId, "FOLLOW_UP", "Follow-up recommendation", input.instructions ?? "Your specialist has added a follow-up recommendation.");
