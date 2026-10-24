@@ -25,7 +25,7 @@ export default function AdminLogin() {
         <button disabled={busy} type="submit" style={{padding:13,fontWeight:700}}>{busy?"Signing in…":"Sign in securely"}</button>
       </form>
       {error&&<p role="alert" style={{color:"#b42318",marginTop:16}}>{error}</p>}
-      <nav aria-label="Other CareBridge sign-in options" style={{display:"flex",gap:14,flexWrap:"wrap",marginTop:20,fontSize:13}}><a href="http://localhost:3000/login" style={{color:"#1667a8"}}>Patient sign in</a><a href="http://localhost:3001/login" style={{color:"#1667a8"}}>Doctor sign in</a></nav>
+      <nav aria-label="Other CareBridge sign-in options" style={{display:"flex",gap:14,flexWrap:"wrap",marginTop:20,fontSize:13}}><a href={process.env.NEXT_PUBLIC_PATIENT_PORTAL_URL ?? "http://localhost:3000/login"} style={{color:"#1667a8"}}>Patient sign in</a><a href={process.env.NEXT_PUBLIC_DOCTOR_PORTAL_URL ?? "http://localhost:3001/login"} style={{color:"#1667a8"}}>Doctor sign in</a></nav>
       <p style={{fontSize:12,color:"#718096",marginTop:22}}>Development environment. Production MFA, identity controls and security review remain release gates.</p>
     </section>
   </main>;
