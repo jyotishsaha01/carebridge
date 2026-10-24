@@ -101,6 +101,16 @@ async function main() {
     assert.equal(identity.body.user.role, expectedRole, `Expected ${expectedRole} role`);
   }
 
+  // Portal role mismatch must revoke the session created by the login attempt.
+  const wrongPortalCookie = await login(accounts.patient);
+  r = await request("/v1/auth/me", {}, wrongPortalCookie);
+  assert.equal(r.response.status, 200);
+  assert.equal(r.body.user.role, "PATIENT");
+  r = await request("/v1/auth/logout", { method: "POST" }, wrongPortalCookie);
+  assert.equal(r.response.status, 200, "Role mismatch should clear the newly created session");
+  r = await request("/v1/auth/me", {}, wrongPortalCookie);
+  assert.equal(r.response.status, 401, "Logged-out session must no longer authenticate");
+
   // Verify role boundaries in both directions before exercising workflows.
   for (const [cookie, path, expectedStatus, label] of [
     [patientCookie, "/v1/admin/overview", 403, "patient cannot access admin overview"],
