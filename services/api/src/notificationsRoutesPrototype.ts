@@ -9,8 +9,6 @@ import {
   markAllNotificationsRead,
   deleteNotification,
   deleteReadNotifications,
-  seedNotificationPrototype,
-  type NotificationRole,
   type NotificationType,
 } from "./notificationsPrototype";
 import { requireRole } from "./auth";
@@ -23,8 +21,6 @@ export async function registerNotificationPrototypeRoutes(app: FastifyInstance) 
   const list = async (request: FastifyRequest, reply: FastifyReply) => {
     const user = await requireRole(request, reply, [...allowedRoles]);
     if (!user) return;
-    const role = user.role as NotificationRole;
-    await seedNotificationPrototype(user.id, role);
     return { notifications: await listNotifications(user.id), unreadCount: await unreadCount(user.id), source: "persistent" };
   };
 
@@ -39,8 +35,6 @@ export async function registerNotificationPrototypeRoutes(app: FastifyInstance) 
       "Cache-Control": "no-cache, no-transform",
       "Connection": "keep-alive",
       "X-Accel-Buffering": "no",
-      "Access-Control-Allow-Origin": request.headers.origin ?? "*",
-      "Access-Control-Allow-Credentials": "true",
     });
     raw.write(`event: ready\ndata: ${JSON.stringify({ connected: true })}\n\n`);
     const unsubscribe = subscribeNotifications(user.id, (notification) => {
