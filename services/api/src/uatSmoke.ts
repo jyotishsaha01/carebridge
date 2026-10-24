@@ -124,6 +124,14 @@ async function main() {
     assert.equal(denied.response.status, expectedStatus, `RBAC check failed: ${label}`);
   }
 
+  // Patient-profile endpoint must deny users without the patient role.
+  r = await request("/v1/patient/profile");
+  assert.equal(r.response.status, 401, "Signed-out users must not access patient profile");
+  r = await request("/v1/patient/profile", {}, doctorCookie);
+  assert.ok(r.response.status === 401 || r.response.status === 403, "Doctors must not access the patient profile");
+  r = await request("/v1/patient/profile", {}, adminCookie);
+  assert.ok(r.response.status === 401 || r.response.status === 403, "Admins must not access the patient profile");
+
   const invalidLogin = await request("/v1/auth/login", {
     method: "POST",
     body: JSON.stringify({ email: "not-a-real-account@carebridge.test", password: DEMO_PASSWORD }),
