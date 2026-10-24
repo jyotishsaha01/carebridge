@@ -41,7 +41,7 @@ export default function DashboardPage() {
       if (notifications.ok) { const notificationData: NotificationData = await notifications.json(); setUnread(notificationData.unreadCount); }
       stream = new EventSource(API_URL + "/v1/notifications/stream", { withCredentials: true });
       stream.addEventListener("notification", () => setUnread((count) => count + 1));
-      stream.onerror = () => { stream?.close(); stream = null; };
+      // EventSource automatically reconnects after transient network errors.
     }).catch((err) => setError(err instanceof Error ? err.message : "Please sign in to view your dashboard.")).finally(() => setLoading(false));
     return () => stream?.close();
   }, []);
