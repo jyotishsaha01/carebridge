@@ -134,6 +134,16 @@ async function main() {
   const documentId = r.body.document.id;
   r = await request("/v1/documents/" + documentId + "/content", { method: "PUT", body: JSON.stringify({ contentBase64: documentContent.toString("base64") }) }, patientCookie);
   assert.equal(r.response.status, 200);
+  // Document endpoints must remain patient-only, even when another authenticated role knows an ID.
+  r = await request("/v1/documents/" + documentId, {}, doctorCookie);
+  assert.ok(r.response.status === 401 || r.response.status === 403, "Doctor must not read patient document metadata");
+  r = await request("/v1/documents/" + documentId + "/content", {}, doctorCookie);
+  assert.ok(r.response.status === 401 || r.response.status === 403, "Doctor must not read patient document content");
+  // Server-side validation must reject unsupported and oversized upload intents.
+  r = await request("/v1/documents/upload-intent", { method: "POST", body: JSON.stringify({ fileName: "script.html", contentType: "text/html", sizeBytes: 10 }) }, patientCookie);
+  assert.notEqual(r.response.status, 201, "Unsupported document types must be rejected");
+  r = await request("/v1/documents/upload-intent", { method: "POST", body: JSON.stringify({ fileName: "oversized.pdf", contentType: "application/pdf", sizeBytes: 10 * 1024 * 1024 + 1 }) }, patientCookie);
+  assert.notEqual(r.response.status, 201, "Documents above 10 MB must be rejected");
   await waitForLiveNotification(liveDoctorDocumentStream, "Patient document uploaded");
   await liveDoctorDocumentStream.reader.cancel();
   r = await request(`/v1/doctor/consultations/${consultationId}/follow-up`, { method: "POST", body: JSON.stringify({ instructions: "UAT follow-up", status: "RECOMMENDED" }) }, doctorCookie);
