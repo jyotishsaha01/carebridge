@@ -59,6 +59,7 @@
 - [x] Patient payment history UI
 - [x] Patient notification center
 - [x] Notification read/unread APIs
+- [x] Notification center supports deleting an owned notification and clearing all read notifications, with user-scoped server-side deletion
 - [x] Patient Care Hub
 - [x] Care plan and care-task APIs
 - [x] Care request workflow for diagnostic/medication/procedure/surgery coordination
@@ -96,6 +97,7 @@ Development, test and QA environments use synthetic data only. No real patient h
 - [x] UAT coverage added for document content ownership boundaries (doctor denied; unknown document returns not found).
 - [x] Document upload API rejects malformed base64, mismatched MIME/file signatures, and storage write failures with controlled responses.
 - [x] Invalid upload metadata returns a structured 400 response with field-level validation details.
+- [x] Notification center API: added authenticated, user-scoped delete-one and clear-read actions; preserves unread notifications when clearing read items.
 - [x] UAT fixture uses a synthetic PDF signature and covers invalid metadata, malformed base64, and MIME/signature mismatch rejection.
 - [ ] Run API UAT integration suite and resolve any failures. CI status is not available from the latest commits yet.
 - [ ] Perform manual browser regression for patient login, questionnaire save/reload, and document preview/upload.
