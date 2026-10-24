@@ -27,6 +27,56 @@ async function login(email: string) {
   assert.equal(response.status, 200, `Login failed: ${email} ${JSON.stringify(body)}`);
   return cookieFrom(response);
 }
+type LiveNotificationStream = {
+  reader: ReadableStreamDefaultReader<Uint8Array>;
+  decoder: TextDecoder;
+  buffer: string;
+};
+
+async function openNotificationStream(cookie: string): Promise<LiveNotificationStream> {
+  const response = await fetch(API_URL + "/v1/notifications/stream", {
+    headers: { cookie, accept: "text/event-stream" },
+  });
+  assert.equal(response.status, 200, "Notification stream should authenticate successfully");
+  assert.ok(response.body, "Notification stream should return a readable body");
+  return { reader: response.body.getReader(), decoder: new TextDecoder(), buffer: "" };
+}
+
+async function waitForLiveNotification(stream: LiveNotificationStream, expectedTitle: string) {
+  const deadline = Date.now() + 5000;
+  while (Date.now() < deadline) {
+    let boundary = stream.buffer.indexOf("\n\n");
+    while (boundary >= 0) {
+      const block = stream.buffer.slice(0, boundary);
+      stream.buffer = stream.buffer.slice(boundary + 2);
+      boundary = stream.buffer.indexOf("\n\n");
+      const eventName = block.split("\n").find((line) => line.startsWith("event:"))?.slice(6).trim();
+      const data = block.split("\n").filter((line) => line.startsWith("data:")).map((line) => line.slice(5).trim()).join("\n");
+      if (eventName === "notification" && data) {
+        const notification = JSON.parse(data) as { title?: string };
+        if (notification.title === expectedTitle) return notification;
+      }
+    }
+
+    const remaining = deadline - Date.now();
+    if (remaining <= 0) break;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      const result = await Promise.race([
+        stream.reader.read(),
+        new Promise<never>((_, reject) => {
+          timer = setTimeout(() => reject(new Error("Timed out waiting for live notification: " + expectedTitle)), remaining);
+        }),
+      ]);
+      if (result.done) throw new Error("Notification stream closed unexpectedly");
+      stream.buffer += stream.decoder.decode(result.value, { stream: true });
+    } finally {
+      if (timer) clearTimeout(timer);
+    }
+  }
+  throw new Error("Timed out waiting for live notification: " + expectedTitle);
+}
+
 async function main() {
   let r = await request("/health");
   assert.equal(r.response.status, 200);
@@ -53,12 +103,16 @@ async function main() {
   r = await request(`/v1/doctor/appointments/${appointmentId}/consultation`, { method: "PUT", body: JSON.stringify({ status: "IN_PROGRESS", summary: "UAT started" }) }, doctorCookie);
   assert.equal(r.response.status, 200);
   const consultationId = r.body.id;
-  r = await request(`/v1/doctor/appointments/${appointmentId}/consultation`, { method: "PUT", body: JSON.stringify({ status: "COMPLETED", summary: "UAT completed" }) }, doctorCookie);
+  const livePatientStream = await openNotificationStream(patientCookie);
+  r = await request(\`/v1/doctor/appointments/\${appointmentId}/consultation\`, { method: "PUT", body: JSON.stringify({ status: "COMPLETED", summary: "UAT completed" }) }, doctorCookie);
   assert.equal(r.response.status, 200);
+  await waitForLiveNotification(livePatientStream, "Consultation completed");
   r = await request(`/v1/doctor/consultations/${consultationId}/note`, { method: "PUT", body: JSON.stringify({ assessment: "UAT", findings: "UAT", recommendations: "UAT" }) }, doctorCookie);
   assert.equal(r.response.status, 200);
-  r = await request(`/v1/doctor/consultations/${consultationId}/prescription`, { method: "PUT", body: JSON.stringify({ instructions: "UAT", items: [{ medication: "UAT medication", dose: "1 tablet", frequency: "Once daily", duration: "7 days" }] }) }, doctorCookie);
+  r = await request(\`/v1/doctor/consultations/\${consultationId}/prescription\`, { method: "PUT", body: JSON.stringify({ instructions: "UAT", items: [{ medication: "UAT medication", dose: "1 tablet", frequency: "Once daily", duration: "7 days" }] }) }, doctorCookie);
   assert.equal(r.response.status, 200);
+  await waitForLiveNotification(livePatientStream, "Prescription available");
+  await livePatientStream.reader.cancel();
   r = await request(`/v1/doctor/consultations/${consultationId}/follow-up`, { method: "POST", body: JSON.stringify({ instructions: "UAT follow-up", status: "RECOMMENDED" }) }, doctorCookie);
   assert.equal(r.response.status, 200);
   r = await request("/v1/notifications", {}, patientCookie);
