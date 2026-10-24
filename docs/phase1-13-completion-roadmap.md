@@ -26,11 +26,13 @@ This document tracks the remaining productization work requested for the CareBri
 - Audit logs
 - Analytics and operational controls
 
-## 05 Patient Profile & Settings
-- Contact and emergency information
-- Medical profile
-- Preferences, privacy and security
-- Account management
+## 05 Patient Profile & Settings — IN PROGRESS
+- [x] Patient name, country and contact phone editing
+- [x] Emergency contact name and phone editing
+- [x] Session review and revocation controls
+- [x] In-app notification preferences
+- [ ] Medical profile review and consent/privacy controls
+- [ ] Account management and deletion workflow
 
 ## 06 Production Document Storage
 - Provider implementation behind current storage interface
