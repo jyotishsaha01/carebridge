@@ -84,6 +84,7 @@ async function main() {
   assert.equal(r.response.status, 200);
   assert.ok(r.body.some((d: any) => d.slug === "dr-anil-sharma"));
   const patientCookie = await login(accounts.patient);
+  const secondPatientCookie = await login("demo-patient-two@demo.carebridge.local");
   const doctorCookie = await login(accounts.doctor);
   const adminCookie = await login(accounts.admin);
   const livePatientStream = await openNotificationStream(patientCookie);
@@ -158,6 +159,13 @@ async function main() {
   assert.ok(r.response.status === 401 || r.response.status === 403, "Doctor must not read patient document metadata");
   r = await request("/v1/documents/" + documentId + "/content", {}, doctorCookie);
   assert.ok(r.response.status === 401 || r.response.status === 403, "Doctor must not read patient document content");
+  // A second authenticated patient must not be able to enumerate or fetch another patient's document.
+  r = await request("/v1/documents/" + documentId, {}, secondPatientCookie);
+  assert.equal(r.response.status, 404, "Other patients must not read document metadata");
+  r = await request("/v1/documents/" + documentId + "/content", {}, secondPatientCookie);
+  assert.equal(r.response.status, 404, "Other patients must not read document content");
+  r = await request("/v1/documents/upload-intent", { method: "POST", body: JSON.stringify({ fileName: "foreign-appointment.pdf", contentType: "application/pdf", sizeBytes: 10, appointmentId }) }, secondPatientCookie);
+  assert.equal(r.response.status, 404, "Patients must not attach documents to another patient's appointment");
   // Server-side validation must reject unsupported and oversized upload intents.
   r = await request("/v1/documents/upload-intent", { method: "POST", body: JSON.stringify({ fileName: "script.html", contentType: "text/html", sizeBytes: 10 }) }, patientCookie);
   assert.notEqual(r.response.status, 201, "Unsupported document types must be rejected");
