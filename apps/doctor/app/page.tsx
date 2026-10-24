@@ -9,10 +9,70 @@ type ClinicalRecordPayload = { consultation:Appointment["consultation"]; notes:{
 const demoAppointments:Appointment[]=[{id:"demo-appointment-1",scheduledAt:new Date(Date.now()+86400000).toISOString(),status:"BOOKED",patient:{id:"demo-patient",firstName:"Demo",lastName:"Patient",country:"US"},medicalIntake:{status:"COMPLETED",reasonForVisit:"Knee pain and mobility concerns",symptoms:"Pain after walking and climbing stairs.",allergies:"None reported",medications:"Ibuprofen as needed"},documents:[],consultation:null}];
 function patientName(a:Appointment){return [a.patient.firstName,a.patient.lastName].filter(Boolean).join(" ")||"Patient";}
 export default function DoctorPage(){
- const [appointments,setAppointments]=useState(demoAppointments); const [selectedId,setSelectedId]=useState(demoAppointments[0].id); const [summary,setSummary]=useState(""); const [assessment,setAssessment]=useState(""); const [findings,setFindings]=useState(""); const [recommendations,setRecommendations]=useState(""); const [prescriptionItems,setPrescriptionItems]=useState<PrescriptionDraft[]>([{medication:"",dose:"",frequency:"",duration:""}]); const [followDue,setFollowDue]=useState(""); const [followInstructions,setFollowInstructions]=useState(""); const [recordLoading,setRecordLoading]=useState(false); const [savingAction,setSavingAction]=useState<"consultation"|"note"|"prescription"|"followUp"|null>(null); const savingActionRef=useRef<string|null>(null); const selectedIdRef=useRef(selectedId); selectedIdRef.current=selectedId; const [message,setMessage]=useState("Demo data shown. Connect the local API to load real seeded appointments.");
+ const [appointments,setAppointments]=useState(demoAppointments); const [selectedId,setSelectedId]=useState(demoAppointments[0].id); const [summary,setSummary]=useState(""); const [assessment,setAssessment]=useState(""); const [findings,setFindings]=useState(""); const [recommendations,setRecommendations]=useState(""); const [prescriptionItems,setPrescriptionItems]=useState<PrescriptionDraft[]>([{medication:"",dose:"",frequency:"",duration:""}]); const [followDue,setFollowDue]=useState(""); const [followInstructions,setFollowInstructions]=useState(""); const [recordLoading,setRecordLoading]=useState(false); const [savingAction,setSavingAction]=useState<"consultation"|"note"|"prescription"|"followUp"|null>(null); const savingActionRef=useRef<string|null>(null); const selectedIdRef=useRef(selectedId); const [message,setMessage]=useState("Demo data shown. Connect the local API to load real seeded appointments.");
  const selected=useMemo(()=>appointments.find(a=>a.id===selectedId)||appointments[0],[appointments,selectedId]);
+ useEffect(()=>{selectedIdRef.current=selectedId;},[selectedId]);
  useEffect(()=>{let cancelled=false;fetch(`${API_URL}/v1/doctor/appointments`,{credentials:"include"}).then(r=>{if(!r.ok)throw new Error();return r.json() as Promise<Appointment[]>}).then(data=>{if(!cancelled&&data.length){setAppointments(data);const requestedId=new URLSearchParams(window.location.search).get("appointmentId");setSelectedId(requestedId&&data.some(appointment=>appointment.id===requestedId)?requestedId:data[0].id);setMessage("Connected to the CareBridge API.")}}).catch(()=>undefined);return()=>{cancelled=true}},[]);
- useEffect(()=>{let cancelled=false;setSummary("");setAssessment("");setFindings("");setRecommendations("");setPrescriptionItems([{medication:"",dose:"",frequency:"",duration:""}]);setFollowDue("");setFollowInstructions("");if(!selectedId||selectedId.startsWith("demo-")){setRecordLoading(false);return()=>{cancelled=true}}setRecordLoading(true);fetch(`${API_URL}/v1/doctor/appointments/${encodeURIComponent(selectedId)}/clinical-record`,{credentials:"include",cache:"no-store"}).then(async r=>{const payload=await r.json().catch(()=>null);if(!r.ok)throw new Error(typeof payload?.error==="string"?payload.error:"Unable to load saved clinical records.");return payload as ClinicalRecordPayload}).then(data=>{if(cancelled)return;setSummary(data.consultation?.summary??"");const note=data.notes?.[0];setAssessment(note?.assessment??"");setFindings(note?.findings??"");setRecommendations(note?.recommendations??"");setPrescriptionItems(data.prescription?.items?.length?data.prescription.items.map(item=>({medication:item.medication??"",dose:item.dose??"",frequency:item.frequency??"",duration:item.duration??""})):[{medication:"",dose:"",frequency:"",duration:""}]);const followUp=data.followUps?.[0];setFollowDue(followUp?.dueAt?new Date(followUp.dueAt).toISOString().slice(0,10):"");setFollowInstructions(followUp?.instructions??"");}).catch(e=>{if(!cancelled)setMessage(e instanceof Error?e.message:"Unable to load saved clinical records.")}).finally(()=>{if(!cancelled)setRecordLoading(false)});return()=>{cancelled=true}},[selectedId]);
+ useEffect(() => {
+  let cancelled = false;
+  const timer = window.setTimeout(() => {
+    setSummary("");
+    setAssessment("");
+    setFindings("");
+    setRecommendations("");
+    setPrescriptionItems([{ medication: "", dose: "", frequency: "", duration: "" }]);
+    setFollowDue("");
+    setFollowInstructions("");
+
+    if (!selectedId || selectedId.startsWith("demo-")) {
+      setRecordLoading(false);
+      return;
+    }
+
+    setRecordLoading(true);
+    void fetch(`${API_URL}/v1/doctor/appointments/${encodeURIComponent(selectedId)}/clinical-record`, {
+      credentials: "include",
+      cache: "no-store",
+    })
+      .then(async (response) => {
+        const payload = await response.json().catch(() => null);
+        if (!response.ok) {
+          throw new Error(typeof payload?.error === "string" ? payload.error : "Unable to load saved clinical records.");
+        }
+        return payload as ClinicalRecordPayload;
+      })
+      .then((data) => {
+        if (cancelled) return;
+        setSummary(data.consultation?.summary ?? "");
+        const note = data.notes?.[0];
+        setAssessment(note?.assessment ?? "");
+        setFindings(note?.findings ?? "");
+        setRecommendations(note?.recommendations ?? "");
+        setPrescriptionItems(data.prescription?.items?.length
+          ? data.prescription.items.map((item) => ({
+              medication: item.medication ?? "",
+              dose: item.dose ?? "",
+              frequency: item.frequency ?? "",
+              duration: item.duration ?? "",
+            }))
+          : [{ medication: "", dose: "", frequency: "", duration: "" }]);
+        const followUp = data.followUps?.[0];
+        setFollowDue(followUp?.dueAt ? new Date(followUp.dueAt).toISOString().slice(0, 10) : "");
+        setFollowInstructions(followUp?.instructions ?? "");
+      })
+      .catch((error) => {
+        if (!cancelled) setMessage(error instanceof Error ? error.message : "Unable to load saved clinical records.");
+      })
+      .finally(() => {
+        if (!cancelled) setRecordLoading(false);
+      });
+  }, 0);
+
+  return () => {
+    cancelled = true;
+    window.clearTimeout(timer);
+  };
+ }, [selectedId]);
  function beginAction(action:"consultation"|"note"|"prescription"|"followUp"){if(savingActionRef.current)return false;savingActionRef.current=action;setSavingAction(action);return true}
  function finishAction(){savingActionRef.current=null;setSavingAction(null)}
  async function refreshClinicalRecord(appointmentId:string){const r=await fetch(`${API_URL}/v1/doctor/appointments/${encodeURIComponent(appointmentId)}/clinical-record`,{credentials:"include",cache:"no-store"});const payload=await r.json().catch(()=>null);if(!r.ok)throw new Error(typeof payload?.error==="string"?payload.error:"Unable to reload saved clinical records.");if(selectedIdRef.current!==appointmentId)return;const data=payload as ClinicalRecordPayload;setSummary(data.consultation?.summary??"");const note=data.notes?.[0];setAssessment(note?.assessment??"");setFindings(note?.findings??"");setRecommendations(note?.recommendations??"");setPrescriptionItems(data.prescription?.items?.length?data.prescription.items.map(item=>({medication:item.medication??"",dose:item.dose??"",frequency:item.frequency??"",duration:item.duration??""})):[{medication:"",dose:"",frequency:"",duration:""}]);const followUp=data.followUps?.[0];setFollowDue(followUp?.dueAt?new Date(followUp.dueAt).toISOString().slice(0,10):"");setFollowInstructions(followUp?.instructions??"")}
