@@ -25,6 +25,7 @@ model User {
   notifications           Notification[]
   notificationPreferences NotificationPreference[]
   supportTickets          SupportTicket[]
+  supportMessages         SupportMessage[] @relation("SupportMessageAuthor")
   reviewedCredentials     DoctorCredential[] @relation("CredentialReviewer")
 }
 
@@ -373,6 +374,7 @@ model SupportTicket {
   updatedAt  DateTime            @updatedAt
   resolvedAt DateTime?
   user       User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  messages   SupportMessage[]
   @@index([userId, status, createdAt])
   @@index([status, updatedAt])
 }
@@ -388,4 +390,16 @@ model NotificationPreference {
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
   @@unique([userId, type])
   @@index([userId, type])
+}
+
+model SupportMessage {
+  id        String        @id @default(cuid())
+  ticketId  String
+  userId    String
+  message   String
+  createdAt DateTime      @default(now())
+  ticket    SupportTicket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  author    User          @relation("SupportMessageAuthor", fields: [userId], references: [id], onDelete: Cascade)
+  @@index([ticketId, createdAt])
+  @@index([userId, createdAt])
 }
