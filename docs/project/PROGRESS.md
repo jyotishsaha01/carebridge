@@ -66,6 +66,8 @@
 - [x] Admin care-request queue
 - [x] Admin operational analytics
 - [x] Patient dashboard connected to live patient counts and notifications
+- [x] Doctor dashboard loads the authenticated doctor profile, real assigned appointments, intake status, and open-slot count from API endpoints
+- [x] Patient appointment lifecycle: future booked appointments can be cancelled or rescheduled with slot synchronization, ownership checks, notifications and audit logging
 - [x] Support request creation, status updates and admin queue
 - [x] Threaded support messages with patient/admin authorization checks
 - [x] Real-time notifications for support request creation, replies and status updates
@@ -73,8 +75,7 @@
 - [ ] Production email/SMS provider and delivery verification
 - [ ] Production identity provider / MFA policy
 - [ ] HIPAA/privacy/legal review and signed vendor agreements where required
-- [ ] Production encrypted object storage and access-control validation
-- [x] Malware scan gate added to medical-document and support-attachment uploads; production fails closed if the scanner is missing, unavailable, insecure, or returns an invalid verdict.
+- [ ] Production encrypted object storage, malware scanning and access-control validation
 - [x] Support attachments: upload/list/retrieve endpoints, ticket-owner/admin authorization, PDF/PNG/JPEG signature checks, 5 MB limit, private storage, and audit events
 - [x] Support priority-based SLA deadlines, overdue filtering, admin escalation controls, escalation notifications, and audit logging
 - [ ] Production video provider provisioning and security review
@@ -93,6 +94,8 @@ Development, test and QA environments use synthetic data only. No real patient h
 
 ## Latest functional work — 24 Oct 2026
 
+- [x] Added a malware-scanning adapter to the document upload path: non-clean/unavailable scan results are audited and no bytes are written to the configured storage provider unless the scan verdict is clean. Production scanner provisioning and external-service verification remain pending.
+
 - [x] Medical intake API: validate appointment IDs and questionnaire field lengths; return field-level 400 errors instead of unhandled validation exceptions.
 - [x] Medical intake API: enforce patient ownership before read/write and persist drafts/completed consent state with an upsert.
 - [x] UAT coverage added for questionnaire draft save, fresh-GET persistence, invalid field lengths, and doctor access denial.
@@ -103,10 +106,24 @@ Development, test and QA environments use synthetic data only. No real patient h
 - [x] Support workflow: added LOW/NORMAL/HIGH priority with 72/24/4-hour SLA deadlines, admin filters for overdue/escalated tickets, escalation/priority updates, notifications, and audit metadata.
 - [x] Support SLA filters parse true/false query values explicitly and combine status and overdue conditions without silently overriding each other.
 - [x] Support attachment persistence model links files to tickets and uploaders; attachment content is returned only after ticket-owner/admin authorization.
+- [x] Doctor dashboard no longer renders availability slots as fake patient appointments; it loads the real doctor appointment queue, supports status filtering, and links directly to the selected appointment in the clinical workspace.
+- [x] Doctor appointment queue supports reasoned cancellation for future booked appointments with ownership/status checks, transactional slot release, patient notification, and audit logging.
+- [x] Doctor consultation transitions are restricted to starting a booked appointment and completing an in-progress consultation; appointment and consultation states update in one transaction, with stale-state conflicts returned clearly to the workspace.
+- [x] Clinical notes are restricted to in-progress consultations; prescriptions and follow-ups require an in-progress or completed consultation, and the doctor workspace surfaces lifecycle API errors.
+- [x] Added a doctor-scoped clinical-record read endpoint and reloads saved consultation summary, latest note, prescription item, and follow-up when switching appointments in the doctor workspace.
+- [x] Clinical note saves update the latest note rather than creating a duplicate on every edit; the doctor workspace reloads persisted data after successful note, prescription, and follow-up saves.
+- [x] Doctor prescription editor supports multiple medication items, displays saved items on reload, shows a clinical-record loading state, prevents duplicate concurrent save actions, and avoids applying save responses to a newly selected appointment.
+- [x] Patient appointment cancellation is patient-scoped, future-booking-only, transactionally updates appointment/consultation state and releases the booked slot; cancellation is audited and notifies patient and doctor.
+- [x] Patient appointment rescheduling claims a future available slot, updates the booked appointment and releases its previous slot in one transaction, with stale-state/conflict handling, audit metadata and patient/doctor notifications.
+- [x] Patient appointment detail page supports viewing future available slots long enough for the appointment, rescheduling, reasoned cancellation, and clear pending/success/error states.
+- [x] Patient dashboard upcoming appointments exclude cancelled, in-progress, completed, and past appointments so lifecycle changes are reflected in the summary.
+- [x] Removed the appointment-level doctor/time unique constraint so cancelled slots can be booked again; the unique availability-slot constraint plus conditional transaction claim remains the double-booking guard.
 - [x] UAT fixture uses a synthetic PDF signature and covers invalid metadata, malformed base64, and MIME/signature mismatch rejection.
-- [x] Added configurable malware-scanner adapter with HTTPS-only production endpoint, bounded timeout, optional bearer token, content SHA-256 metadata, verdict validation, and upload rejection before storage on infected/unavailable scans.
-- [x] Added tests for production fail-closed behavior, clean/infected verdicts, invalid responses, scanner outage and insecure endpoint rejection.
-- [ ] Provision and verify the actual malware scanning service and run end-to-end upload tests in the target environment.
-- [ ] Run API UAT integration suite and resolve any failures. CI status is not available from the latest commits yet.
+- [x] Added an S3-compatible object storage provider using built-in SigV4 signing, server-side AES256 encryption headers, and 5-minute signed download URLs; document writes/reads now go through the provider abstraction.
+- [x] Production configuration fails closed if local storage is selected or required S3 credentials/encryption settings are missing; added storage provider validation tests.
+- [ ] Provision the private bucket, least-privilege IAM credentials, lifecycle/retention policy, malware scanning, and verify endpoint/region/encryption configuration in the target environment.
+- [x] CareBridge foundation checks and API UAT integration passed for the current PR #42 head; QA-only smoke was skipped because this is not a QA-targeted branch.
+- [ ] Rebase the remaining open PR branches against current `main` and rerun latest-head CI; several branches overlap in `services/api/src/documents.ts`, `services/api/src/support.ts`, and `services/api/src/uatSmoke.ts`, and GitHub currently reports them as non-mergeable.
+- [x] Removed the hard-coded demo patient fallback from the live doctor workspace; loading, empty, API-error, and retry states are shown instead.
 - [ ] Perform manual browser regression for patient login, questionnaire save/reload, and document preview/upload.
 
