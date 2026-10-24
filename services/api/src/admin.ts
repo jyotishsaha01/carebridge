@@ -28,11 +28,16 @@ export async function registerAdminRoutes(app: FastifyInstance) {
     const user = await requireAdmin(request, reply);
     if (!user) return;
     const query = z.object({ verified: z.enum(["true", "false", "all"]).default("all") }).parse(request.query);
-    return prisma.doctor.findMany({
+    const doctors = await prisma.doctor.findMany({
       where: query.verified === "all" ? undefined : { isVerified: query.verified === "true" },
-      select: { id: true, name: true, slug: true, location: true, status: true, isVerified: true, isActive: true, specialty: { select: { name: true } } },
+      select: {
+        id: true, name: true, slug: true, location: true, status: true, isVerified: true, isActive: true,
+        specialty: { select: { name: true } },
+        credentials: { where: { status: "PENDING" }, select: { id: true } },
+      },
       orderBy: { name: "asc" },
     });
+    return doctors.map(({ credentials, ...doctor }) => ({ ...doctor, pendingCredentials: credentials.length }));
   });
 
   app.post("/v1/admin/doctors/:doctorId/verification", async (request, reply) => {

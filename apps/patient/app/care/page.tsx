@@ -17,6 +17,7 @@ export default function CarePage() {
   const [description, setDescription] = useState("");
   const [country, setCountry] = useState("US");
   const [message, setMessage] = useState("");
+  const [submitting, setSubmitting] = useState(false);
 
   async function load() {
     const [plansResponse, requestsResponse] = await Promise.all([
@@ -32,14 +33,25 @@ export default function CarePage() {
 
   async function createRequest(event: FormEvent) {
     event.preventDefault();
-    if (!title.trim()) return;
-    const response = await fetch(`${API_URL}/v1/patient/care-requests`, {
-      method: "POST", credentials: "include", headers: { "content-type": "application/json" },
-      body: JSON.stringify({ type, title, description: description || undefined, country: country || undefined }),
-    });
-    if (!response.ok) { setMessage("We could not submit the request. Please try again."); return; }
-    setTitle(""); setDescription(""); setMessage("Request submitted. Our care team can review it from here.");
-    await load();
+    if (!title.trim() || submitting) return;
+    setSubmitting(true);
+    setMessage("");
+    try {
+      const response = await fetch(`${API_URL}/v1/patient/care-requests`, {
+        method: "POST", credentials: "include", headers: { "content-type": "application/json" },
+        body: JSON.stringify({ type, title, description: description || undefined, country: country || undefined }),
+      });
+      if (!response.ok) {
+        setMessage("We could not submit the request. Please try again.");
+        return;
+      }
+      setTitle(""); setDescription(""); setMessage("Request submitted. Our care team can review it from here.");
+      await load();
+    } catch {
+      setMessage("We could not reach CareBridge. Check your connection and try again.");
+    } finally {
+      setSubmitting(false);
+    }
   }
 
   async function updateTask(planId: string, task: Task) {
@@ -66,7 +78,7 @@ export default function CarePage() {
             <label>Request title<input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="e.g. Help me understand surgery options" maxLength={160} /></label>
             <label>Details<textarea value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Share what you would like the care team to help with." maxLength={2000} /></label>
             <label>Preferred country<input value={country} onChange={(e) => setCountry(e.target.value)} maxLength={80} /></label>
-            <button type="submit">Start a care request <span>→</span></button>
+            <button type="submit" disabled={submitting}>{submitting ? "Submitting request…" : "Start a care request"} <span>{submitting ? "…" : "→"}</span></button>
             {message && <p className={styles.message}>{message}</p>}
           </form>
         </article>

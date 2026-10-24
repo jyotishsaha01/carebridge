@@ -34,6 +34,20 @@ export async function registerCarePlatformRoutes(app: FastifyInstance) {
     const user = await requirePatient(request, reply);
     if (!user?.patient) return;
     const input = z.object({ type: z.enum(["DIAGNOSTIC", "PROCEDURE", "SURGERY", "MEDICATION", "COORDINATION"]), title: z.string().trim().min(3).max(160), description: z.string().trim().max(2000).optional(), country: z.string().trim().max(80).optional(), targetDate: z.coerce.date().optional() }).parse(request.body);
+    const duplicate = await prisma.careRequest.findFirst({
+      where: {
+        patientId: user.patient.id,
+        type: input.type,
+        title: input.title,
+        description: input.description ?? null,
+        country: input.country ?? null,
+        targetDate: input.targetDate ?? null,
+        createdAt: { gte: new Date(Date.now() - 30_000) },
+      },
+      orderBy: { createdAt: "desc" },
+    });
+    if (duplicate) return reply.code(200).send(duplicate);
+
     const requestRecord = await prisma.careRequest.create({ data: { patientId: user.patient.id, ...input } });
     await createNotification({ userId: user.id, role: "PATIENT", type: "SYSTEM", title: "Care request received", body: `Your ${input.type.toLowerCase()} request has been received and will be reviewed by CareBridge.` });
     await notifyUsersByRole("ADMIN", "SYSTEM", "New care request", `A patient submitted a new ${input.type.toLowerCase()} care request.`);

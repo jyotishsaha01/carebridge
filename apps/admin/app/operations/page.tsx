@@ -141,10 +141,10 @@ export default function Operations() {
           <section id="doctors" style={{ background: "white", border: "1px solid #e2e8f0", borderRadius: 22, padding: 22, scrollMarginTop: 24 }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
               <h2>Provider license review</h2>
-              <span style={{ color: "#64748b", fontSize: 13 }}>{doctors.filter((doctor) => !doctor.isVerified || !doctor.isActive).length} need review</span>
+              <span style={{ color: "#64748b", fontSize: 13 }}>{doctors.filter((doctor) => doctor.pendingCredentials > 0 || !doctor.isVerified || !doctor.isActive).length} need review</span>
             </div>
             <input aria-label="Search doctors" value={doctorSearch} onChange={(event) => setDoctorSearch(event.target.value)} placeholder="Search by doctor name or specialty" style={{ width: "100%", margin: "12px 0", padding: 12, border: "1px solid #cbd5e1", borderRadius: 12 }} />
-            {doctors.filter((doctor) => (doctor.name + " " + doctor.specialty.name + " " + doctor.location).toLowerCase().includes(doctorSearch.trim().toLowerCase())).sort((a, b) => Number(a.isVerified && a.isActive) - Number(b.isVerified && b.isActive)).map((doctor) => (
+            {doctors.filter((doctor) => (doctor.name + " " + doctor.specialty.name + " " + doctor.location).toLowerCase().includes(doctorSearch.trim().toLowerCase())).sort((a, b) => Number(!(a.pendingCredentials > 0 || !a.isVerified || !a.isActive)) - Number(!(b.pendingCredentials > 0 || !b.isVerified || !b.isActive))).map((doctor) => (
               <button key={doctor.id} onClick={() => void selectDoctor(doctor)} style={{ display: "block", width: "100%", textAlign: "left", padding: 14, border: 0, borderTop: "1px solid #eef2f7", background: selected?.id === doctor.id ? "#f0f7fc" : "white" }}>
                 <b>{doctor.name}</b>
                 <div style={{ color: "#718096" }}>{doctor.specialty.name} · {doctor.status} · {doctor.location}</div>

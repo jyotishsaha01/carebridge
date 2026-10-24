@@ -321,6 +321,9 @@ async function main() {
   r = await request("/v1/patient/care-requests", { method: "POST", body: JSON.stringify({ type: "DIAGNOSTIC", title: "UAT diagnostic request", description: "Synthetic request for admin approval flow." }) }, patientCookie);
   assert.equal(r.response.status, 201, "Patient should be able to submit a care request");
   const careRequestId = r.body.id;
+  r = await request("/v1/patient/care-requests", { method: "POST", body: JSON.stringify({ type: "DIAGNOSTIC", title: "UAT diagnostic request", description: "Synthetic request for admin approval flow." }) }, patientCookie);
+  assert.equal(r.response.status, 200, "A rapid duplicate care request should return the existing request");
+  assert.equal(r.body.id, careRequestId, "Rapid duplicate submission must not create another care request");
   r = await request("/v1/admin/care-requests?status=REQUESTED&limit=100", {}, adminCookie);
   assert.equal(r.response.status, 200);
   assert.ok(r.body.some((item: any) => item.id === careRequestId), "Admin should see newly submitted patient care requests");

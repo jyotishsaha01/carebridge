@@ -35,7 +35,7 @@ export default function AdminDashboard() {
           ]);
           if (cancelled) return;
           setOverview(counts);
-          setDoctors(doctorRows.filter((doctor) => !doctor.isVerified || !doctor.isActive));
+          setDoctors(doctorRows.filter((doctor) => doctor.pendingCredentials > 0 || !doctor.isVerified || !doctor.isActive));
           setCareRequests(requestRows.filter((item) => item.status === "REQUESTED" || item.status === "REVIEWING").slice(0, 6));
           setTickets(ticketRows.filter((ticket) => ticket.status === "OPEN" || ticket.status === "IN_PROGRESS").slice(0, 6));
           if (notificationResponse.ok) {

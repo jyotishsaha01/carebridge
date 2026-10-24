@@ -15,7 +15,7 @@ export function getCurrentUser() { return apiFetch<{ user: AuthUser }>("/v1/auth
 export function signOut() { return apiFetch<{ ok: true }>("/v1/auth/logout", { method: "POST" }); }
 
 export type Overview = { patients: number; doctors: number; verifiedDoctors: number; appointments: number; openSessions: number; pendingCareRequests: number };
-export type AdminDoctor = { id: string; name: string; slug: string; location: string; status: string; isVerified: boolean; isActive: boolean; specialty: { name: string } };
+export type AdminDoctor = { id: string; name: string; slug: string; location: string; status: string; isVerified: boolean; isActive: boolean; pendingCredentials: number; specialty: { name: string } };
 export type AuditLog = { id: string; actorUserId: string | null; action: string; resourceType: string; resourceId: string | null; outcome: string; metadata: Record<string, unknown> | null; createdAt: string };
 export type AdminCredential = { id: string; doctorId: string; type: string; licenseNumber: string; jurisdiction: string; documentName: string | null; status: "PENDING" | "APPROVED" | "REJECTED"; createdAt: string; reviewedAt: string | null };
 export type AdminPatient = { id: string; firstName: string | null; lastName: string | null; country: string; createdAt: string; user: { email: string; isEmailVerified: boolean } };

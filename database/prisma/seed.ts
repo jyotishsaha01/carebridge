@@ -108,9 +108,7 @@ async function main() {
         expertise: doctor.expertise,
         bio: doctor.bio,
         specialtyId: specialtyMap.get(doctor.specialty)!,
-        status: "VERIFIED",
-        isVerified: true,
-        isActive: true,
+        // Preserve existing doctor verification/activation decisions when re-running the seed.
       },
       create: {
         userId: user.id,
