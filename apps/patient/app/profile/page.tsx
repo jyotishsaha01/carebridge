@@ -80,6 +80,19 @@ export default function ProfilePage() {
       setError("Phone numbers must be 30 characters or fewer.");
       return;
     }
+    const phonePattern = /^[+0-9().\\s-]*$/;
+    if ((phone.trim() && !phonePattern.test(phone.trim())) || (emergencyPhone.trim() && !phonePattern.test(emergencyPhone.trim()))) {
+      setError("Phone numbers can contain digits, spaces, +, parentheses, hyphens, and periods only.");
+      return;
+    }
+    if (Boolean(emergencyName.trim()) !== Boolean(emergencyPhone.trim())) {
+      setError("Enter both the emergency contact name and phone number, or leave both blank.");
+      return;
+    }
+    if (emergencyPhone.trim() && emergencyPhone.replace(/\\D/g, "").length < 7) {
+      setError("Enter a valid emergency contact phone number with at least 7 digits.");
+      return;
+    }
     setSaving(true);
     try {
       const response = await fetch(`${API_URL}/v1/patient/profile`, {
@@ -140,13 +153,13 @@ export default function ProfilePage() {
         <section style={{ marginTop: 26, background: "white", border: "1px solid #e2e8f0", borderRadius: 24, padding: 26 }}>
           <h2>Personal information</h2>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(230px,1fr))", gap: 16 }}>
-            <label style={{ display: "grid", gap: 7, fontWeight: 700 }}>First name<input maxLength={120} value={first} onChange={(event) => setFirst(event.target.value)} autoComplete="given-name" style={{ padding: 13, border: "1px solid #cbd5e1", borderRadius: 12 }} /></label>
-            <label style={{ display: "grid", gap: 7, fontWeight: 700 }}>Last name<input maxLength={120} value={last} onChange={(event) => setLast(event.target.value)} autoComplete="family-name" style={{ padding: 13, border: "1px solid #cbd5e1", borderRadius: 12 }} /></label>
+            <label style={{ display: "grid", gap: 7, fontWeight: 700 }}>First name<input maxLength={120} value={first} onChange={(event) => { setFirst(event.target.value); setSaved(false); }} autoComplete="given-name" style={{ padding: 13, border: "1px solid #cbd5e1", borderRadius: 12 }} /></label>
+            <label style={{ display: "grid", gap: 7, fontWeight: 700 }}>Last name<input maxLength={120} value={last} onChange={(event) => { setLast(event.target.value); setSaved(false); }} autoComplete="family-name" style={{ padding: 13, border: "1px solid #cbd5e1", borderRadius: 12 }} /></label>
             <label style={{ display: "grid", gap: 7, fontWeight: 700 }}>Email<input value={profile?.user?.email ?? ""} readOnly aria-readonly="true" style={{ padding: 13, border: "1px solid #cbd5e1", borderRadius: 12, background: "#f8fafc" }} /></label>
-            <label style={{ display: "grid", gap: 7, fontWeight: 700 }}>Country<select value={country} onChange={(event) => setCountry(event.target.value)} style={{ padding: 13, border: "1px solid #cbd5e1", borderRadius: 12 }}><option value="US">United States</option><option value="IN">India</option><option value="GB">United Kingdom</option><option value="CA">Canada</option></select></label>
-            <label style={{ display: "grid", gap: 7, fontWeight: 700 }}>Phone<input type="tel" maxLength={30} value={phone} onChange={(event) => setPhone(event.target.value)} autoComplete="tel" placeholder="+1 555 0100" style={{ padding: 13, border: "1px solid #cbd5e1", borderRadius: 12 }} /></label>
-            <label style={{ display: "grid", gap: 7, fontWeight: 700 }}>Emergency contact name<input maxLength={120} value={emergencyName} onChange={(event) => setEmergencyName(event.target.value)} style={{ padding: 13, border: "1px solid #cbd5e1", borderRadius: 12 }} /></label>
-            <label style={{ display: "grid", gap: 7, fontWeight: 700 }}>Emergency contact phone<input type="tel" maxLength={30} value={emergencyPhone} onChange={(event) => setEmergencyPhone(event.target.value)} style={{ padding: 13, border: "1px solid #cbd5e1", borderRadius: 12 }} /></label>
+            <label style={{ display: "grid", gap: 7, fontWeight: 700 }}>Country<select value={country} onChange={(event) => { setCountry(event.target.value); setSaved(false); }} style={{ padding: 13, border: "1px solid #cbd5e1", borderRadius: 12 }}><option value="US">United States</option><option value="IN">India</option><option value="GB">United Kingdom</option><option value="CA">Canada</option></select></label>
+            <label style={{ display: "grid", gap: 7, fontWeight: 700 }}>Phone<input type="tel" maxLength={30} value={phone} onChange={(event) => { setPhone(event.target.value); setSaved(false); }} autoComplete="tel" placeholder="+1 555 0100" style={{ padding: 13, border: "1px solid #cbd5e1", borderRadius: 12 }} /></label>
+            <label style={{ display: "grid", gap: 7, fontWeight: 700 }}>Emergency contact name<input maxLength={120} value={emergencyName} onChange={(event) => { setEmergencyName(event.target.value); setSaved(false); }} style={{ padding: 13, border: "1px solid #cbd5e1", borderRadius: 12 }} /></label>
+            <label style={{ display: "grid", gap: 7, fontWeight: 700 }}>Emergency contact phone<input type="tel" maxLength={30} value={emergencyPhone} onChange={(event) => { setEmergencyPhone(event.target.value); setSaved(false); }} style={{ padding: 13, border: "1px solid #cbd5e1", borderRadius: 12 }} /></label>
           </div>
         </section>
 
@@ -172,7 +185,7 @@ export default function ProfilePage() {
             </label>
           ))}
         </section>
-        <button onClick={() => void save()} disabled={saving} style={{ marginTop: 20, padding: "13px 20px", border: 0, borderRadius: 13, background: "#1672b8", color: "white", fontWeight: 800, opacity: saving ? 0.7 : 1 }}>{saving ? "Saving…" : "Save changes"}</button>
+        <button onClick={() => void save()} disabled={saving || loading} style={{ marginTop: 20, padding: "13px 20px", border: 0, borderRadius: 13, background: "#1672b8", color: "white", fontWeight: 800, opacity: saving ? 0.7 : 1 }}>{saving ? "Saving…" : "Save changes"}</button>
       </div>
     </main>
   );
