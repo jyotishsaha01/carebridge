@@ -2,7 +2,7 @@
 
 import { FormEvent, useState } from "react";
 import { useRouter } from "next/navigation";
-import { signIn } from "../../lib/api";
+import { signIn, signOut } from "../../lib/api";
 
 export default function AdminLogin() {
   const router = useRouter();
@@ -12,7 +12,7 @@ export default function AdminLogin() {
   const [error,setError]=useState("");
   async function submit(event:FormEvent){
     event.preventDefault(); setBusy(true); setError("");
-    try { const result=await signIn(email,password); if(result.user.role!=="ADMIN") throw new Error("This workspace requires an admin account."); router.push("/dashboard"); }
+    try { const result=await signIn(email,password); if(result.user.role!=="ADMIN") { await signOut().catch(()=>undefined); throw new Error("This account is not registered as an administrator. Choose Patient or Doctor sign-in instead."); } router.push("/dashboard"); }
     catch(e){setError(e instanceof Error?e.message:"Unable to sign in.");} finally{setBusy(false);}
   }
   return <main style={{minHeight:"100vh",display:"grid",placeItems:"center",background:"#f7f9fc",padding:24,fontFamily:"Inter,system-ui,sans-serif"}}>
@@ -25,6 +25,7 @@ export default function AdminLogin() {
         <button disabled={busy} type="submit" style={{padding:13,fontWeight:700}}>{busy?"Signing in…":"Sign in securely"}</button>
       </form>
       {error&&<p role="alert" style={{color:"#b42318",marginTop:16}}>{error}</p>}
+      <nav aria-label="Other CareBridge sign-in options" style={{display:"flex",gap:14,flexWrap:"wrap",marginTop:20,fontSize:13}}><a href="http://localhost:3000/login" style={{color:"#1667a8"}}>Patient sign in</a><a href="http://localhost:3001/login" style={{color:"#1667a8"}}>Doctor sign in</a></nav>
       <p style={{fontSize:12,color:"#718096",marginTop:22}}>Development environment. Production MFA, identity controls and security review remain release gates.</p>
     </section>
   </main>;
