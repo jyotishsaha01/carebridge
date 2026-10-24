@@ -54,7 +54,7 @@ export default function SupportPage() {
     <p style={{ color: "#64748b" }}>Create a request and continue the conversation securely from your account.</p>
     {error && <div role="alert" style={{ marginTop: 18, padding: 14, borderRadius: 14, background: "#fff7ed" }}>{error}</div>}
     {sent && <div style={{ marginTop: 18, padding: 14, borderRadius: 14, background: "#ecfdf5", color: "#166534" }}>Request received. Track its status below.</div>}
-    <div style={{ display: "grid", gridTemplateColumns: "minmax(280px,.85fr) minmax(320px,1.15fr)", gap: 20, marginTop: 24 }}>
+    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 320px), 1fr))", gap: 20, marginTop: 24 }}>
       <div style={{ display: "grid", gap: 20, alignContent: "start" }}>
         <section style={panel}><h2>New request</h2>
           <label style={{ display: "grid", gap: 7, fontWeight: 700 }}>Topic<select value={category} onChange={e => setCategory(e.target.value)} style={{ padding: 12, border: "1px solid #cbd5e1", borderRadius: 12 }}>{cats.map(x => <option key={x}>{x}</option>)}</select></label>
