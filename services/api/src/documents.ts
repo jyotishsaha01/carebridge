@@ -16,7 +16,7 @@ export async function registerDocumentRoutes(app: FastifyInstance){
  app.put("/v1/documents/:documentId/content",async(request,reply)=>{
   const auth=await requirePatient(request,reply);if(!auth)return;
   const {documentId}=z.object({documentId:z.string().min(1)}).parse(request.params);
-  const input=z.object({contentBase64:z.string().min(1)}).parse(request.body);
+  const input=z.object({contentBase64:z.string().min(1).max(14_000_000)}).parse(request.body);
   const document=await prisma.medicalDocument.findFirst({where:{id:documentId,patientId:auth.patient.id}});
   if(!document)return reply.code(404).send({error:"Document not found"});
   // Buffer.from(base64) is permissive; reject malformed encodings before writing bytes.
