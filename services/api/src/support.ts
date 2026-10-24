@@ -86,13 +86,15 @@ export async function registerSupportRoutes(app: FastifyInstance) {
   app.get("/v1/admin/support/tickets", async (request, reply) => {
     const user = await requireRole(request, reply, ["ADMIN"]);
     if (!user) return;
-    const query = z.object({ status: z.enum(["OPEN", "IN_PROGRESS", "RESOLVED", "CLOSED"]).optional(), priority: priorityInput.optional(), overdue: z.coerce.boolean().optional(), escalated: z.coerce.boolean().optional(), limit: z.coerce.number().int().min(1).max(100).default(50) }).parse(request.query);
+    const query = z.object({ status: z.enum(["OPEN", "IN_PROGRESS", "RESOLVED", "CLOSED"]).optional(), priority: priorityInput.optional(), overdue: z.enum(["true", "false"]).transform((value) => value === "true").optional(), escalated: z.enum(["true", "false"]).transform((value) => value === "true").optional(), limit: z.coerce.number().int().min(1).max(100).default(50) }).parse(request.query);
     const now = new Date();
     const where = {
-      ...(query.status ? { status: query.status } : {}),
-      ...(query.priority ? { priority: query.priority } : {}),
-      ...(query.overdue ? { slaDueAt: { lt: now }, status: { notIn: ["RESOLVED", "CLOSED"] } } : {}),
-      ...(query.escalated === true ? { escalatedAt: { not: null } } : query.escalated === false ? { escalatedAt: null } : {}),
+      AND: [
+        ...(query.status ? [{ status: query.status }] : []),
+        ...(query.priority ? [{ priority: query.priority }] : []),
+        ...(query.overdue === true ? [{ slaDueAt: { lt: now }, status: { notIn: ["RESOLVED", "CLOSED"] } }] : []),
+        ...(query.escalated !== undefined ? [{ escalatedAt: query.escalated ? { not: null } : null }] : []),
+      ],
     };
     return prisma.supportTicket.findMany({
       where,
@@ -131,9 +133,11 @@ export async function registerSupportRoutes(app: FastifyInstance) {
         await createNotification({ userId: owner.id, role: owner.role as NotificationRole, type: "SUPPORT", title: "Support request escalated", body: "Your support request has been escalated for additional review." });
       }
     }
-    const ticketOwner = await prisma.user.findUnique({ where: { id: ticket.userId }, select: { role: true } });
-    if (ticketOwner && ["PATIENT", "DOCTOR", "ADMIN"].includes(ticketOwner.role)) {
-      await createNotification({ userId: ticket.userId, role: ticketOwner.role as NotificationRole, type: "SUPPORT", title: "Support request updated", body: "Your support request status is now " + input.status + "." });
+    if (input.status !== undefined) {
+      const ticketOwner = await prisma.user.findUnique({ where: { id: ticket.userId }, select: { role: true } });
+      if (ticketOwner && ["PATIENT", "DOCTOR", "ADMIN"].includes(ticketOwner.role)) {
+        await createNotification({ userId: ticket.userId, role: ticketOwner.role as NotificationRole, type: "SUPPORT", title: "Support request updated", body: "Your support request status is now " + input.status + "." });
+      }
     }
     return ticket;
   });
