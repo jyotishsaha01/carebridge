@@ -52,8 +52,8 @@ async function main() {
   assert.equal(r.body.user.role, "PATIENT");
 
   // Document endpoints must reject the wrong role and never disclose unknown records.
-  const unknownPatientId = "uat-missing-patient-" + crypto.randomUUID();
-  const unknownDocumentId = "uat-missing-document-" + crypto.randomUUID();
+  const unknownPatientId = "uat-missing-patient-id";
+  const unknownDocumentId = "uat-missing-document-id";
   r = await request(`/v1/doctor/patients/${unknownPatientId}/documents`, {}, doctorCookie);
   assert.equal(r.response.status, 404, "Doctor document list should not disclose a missing patient");
   r = await request(`/v1/doctor/documents/${unknownDocumentId}`, {}, doctorCookie);
