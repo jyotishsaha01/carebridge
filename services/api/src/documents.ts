@@ -4,6 +4,7 @@ import { prisma } from "./server";
 import { createUploadIntent, documentStorage } from "./storage";
 import { requireRole } from "./auth";
 import { recordAudit } from "./audit";
+import { createNotification } from "./notificationsPrototype";
 import { saveDocument } from "./documentStoragePrototype";
 import { Buffer } from "node:buffer";
 
@@ -22,6 +23,10 @@ export async function registerDocumentRoutes(app: FastifyInstance){
   if(content.length!==document.sizeBytes)return reply.code(400).send({error:"Document size does not match upload metadata"});
   await saveDocument({storageKey:document.storageKey,content,contentType:document.contentType});
   await recordAudit(request,{actorUserId:auth.user.id,action:"PATIENT_DOCUMENT_UPLOADED",resourceType:"MedicalDocument",resourceId:document.id,outcome:"SUCCESS"});
+  if (document.appointmentId) {
+    const appointment = await prisma.appointment.findUnique({ where: { id: document.appointmentId }, include: { doctor: { select: { userId: true, name: true } } } });
+    if (appointment) await createNotification({ userId: appointment.doctor.userId, role: "DOCTOR", type: "DOCUMENT", title: "Patient document uploaded", body: "A patient uploaded a document for your consultation with " + appointment.doctor.name + "." });
+  }
   return {ok:true,documentId:document.id};
  });
  app.get("/v1/documents/:documentId/content",async(request,reply)=>{
