@@ -65,11 +65,15 @@
 - [x] Admin care-request queue
 - [x] Admin operational analytics
 - [x] Patient dashboard connected to live patient counts and notifications
+- [x] Support request creation, status updates and admin queue
+- [x] Threaded support messages with patient/admin authorization checks
+- [x] Real-time notifications for support request creation, replies and status updates
 - [ ] Provider-specific production payment integration and reconciliation
 - [ ] Production email/SMS provider and delivery verification
 - [ ] Production identity provider / MFA policy
 - [ ] HIPAA/privacy/legal review and signed vendor agreements where required
 - [ ] Production encrypted object storage, malware scanning and access-control validation
+- [ ] Support attachments and escalation/SLA workflow
 - [ ] Production video provider provisioning and security review
 - [ ] Security assessment / penetration testing
 - [ ] Backup/restore rehearsal and disaster-recovery validation
