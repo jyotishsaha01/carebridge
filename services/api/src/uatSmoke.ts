@@ -140,6 +140,18 @@ async function main() {
   r = await request("/v1/admin/support/tickets/" + supportTicketId, { method: "PATCH", body: JSON.stringify({ status: "IN_PROGRESS" }) }, adminCookie);
   assert.equal(r.response.status, 200);
   await waitForLiveNotification(livePatientSupportStream, "Support request updated");
+  r = await request("/v1/support/tickets/" + supportTicketId + "/messages", {}, patientCookie);
+  assert.equal(r.response.status, 200);
+  assert.equal(r.body.length, 0);
+  r = await request("/v1/support/tickets/" + supportTicketId + "/messages", {}, doctorCookie);
+  assert.equal(r.response.status, 403);
+  r = await request("/v1/support/tickets/" + supportTicketId + "/messages", { method: "POST", body: JSON.stringify({ message: "The support team is reviewing your request." }) }, adminCookie);
+  assert.equal(r.response.status, 201);
+  await waitForLiveNotification(livePatientSupportStream, "Support team replied");
+  r = await request("/v1/support/tickets/" + supportTicketId + "/messages", {}, patientCookie);
+  assert.equal(r.response.status, 200);
+  assert.equal(r.body.length, 1);
+  assert.equal(r.body[0].message, "The support team is reviewing your request.");
   await liveAdminSupportStream.reader.cancel();
   await livePatientSupportStream.reader.cancel();
   r = await request("/v1/notifications", {}, patientCookie);
