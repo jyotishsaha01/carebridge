@@ -114,6 +114,7 @@ Development, test and QA environments use synthetic data only. No real patient h
 - [x] Patient appointment cancellation is patient-scoped, future-booking-only, transactionally updates appointment/consultation state and releases the booked slot; cancellation is audited and notifies patient and doctor.
 - [x] Patient appointment rescheduling claims a future available slot, updates the booked appointment and releases its previous slot in one transaction, with stale-state/conflict handling, audit metadata and patient/doctor notifications.
 - [x] Patient appointment detail page supports viewing available times, rescheduling, reasoned cancellation, and clear pending/success/error states.
+- [x] Patient dashboard upcoming appointments exclude cancelled, in-progress, completed, and past appointments so lifecycle changes are reflected in the summary.
 - [x] Removed the appointment-level doctor/time unique constraint so cancelled slots can be booked again; the unique availability-slot constraint plus conditional transaction claim remains the double-booking guard.
 - [x] UAT fixture uses a synthetic PDF signature and covers invalid metadata, malformed base64, and MIME/signature mismatch rejection.
 - [ ] Run API UAT integration suite and resolve any failures. CI status is not available from the latest commits yet.
