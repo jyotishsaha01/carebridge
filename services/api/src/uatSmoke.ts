@@ -91,6 +91,13 @@ async function main() {
   const liveAdminStream = await openNotificationStream(adminCookie);
   r = await request("/v1/auth/me", {}, patientCookie);
   assert.equal(r.body.user.role, "PATIENT");
+  r = await request("/v1/patient/profile", { method: "PATCH", body: JSON.stringify({ firstName: "UAT", lastName: "Patient", country: "IN", phone: "+91-555-0100", emergencyContactName: "UAT Contact", emergencyContactPhone: "+91-555-0101" }) }, patientCookie);
+  assert.equal(r.response.status, 200);
+  assert.equal(r.body.phone, "+91-555-0100");
+  assert.equal(r.body.emergencyContactName, "UAT Contact");
+  r = await request("/v1/patient/profile", {}, patientCookie);
+  assert.equal(r.response.status, 200);
+  assert.equal(r.body.emergencyContactPhone, "+91-555-0101");
   const from = new Date();
   const to = new Date(Date.now() + 30 * 86400000);
   r = await request(`/v1/doctors/dr-anil-sharma/availability?from=${encodeURIComponent(from.toISOString())}&to=${encodeURIComponent(to.toISOString())}`);
