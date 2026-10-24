@@ -22,25 +22,35 @@ export default function DocumentsPanel() {
   const [openingId,setOpeningId] = useState("");
   const [message,setMessage] = useState("Upload a PDF or image to share securely with your care team.");
   async function load() {
-    const response = await fetch(`${API_URL}/v1/documents`,{credentials:"include"});
-    if(response.ok) setDocuments(await response.json());
+    const response = await fetch(`${API_URL}/v1/documents`,{credentials:"include",cache:"no-store"});
+    if (!response.ok) {
+      if (response.status === 401 || response.status === 403) throw new Error("Sign in as a patient to view your documents.");
+      throw new Error("Your documents could not be loaded. Please retry.");
+    }
+    setDocuments(await response.json() as DocumentItem[]);
   }
   // eslint-disable-next-line react-hooks/set-state-in-effect
-  useEffect(()=>{void load();},[]);
+  useEffect(()=>{void load().catch(error=>setMessage(error instanceof Error?error.message:"Your documents could not be loaded."));},[]);
   async function upload(file:File){
     if(!allowedTypes.includes(file.type))return setMessage("For now, use PDF, JPG or PNG files.");
     if(file.size>maxBytes)return setMessage("That file is larger than the 10 MB development limit.");
     setBusy(true);setMessage("Preparing a secure upload…");
     try{
       const intentResponse=await fetch(`${API_URL}/v1/documents/upload-intent`,{method:"POST",credentials:"include",headers:{"content-type":"application/json"},body:JSON.stringify({fileName:file.name,contentType:file.type,sizeBytes:file.size})});
-      if(!intentResponse.ok)throw new Error("Upload intent failed");
+      if(!intentResponse.ok) {
+        const body = await intentResponse.json().catch(()=>null) as {error?:string}|null;
+        throw new Error(body?.error ?? (intentResponse.status===401||intentResponse.status===403 ? "Sign in as a patient before uploading documents." : "Upload could not be started."));
+      }
       const intent=await intentResponse.json() as {document:{id:string}};
       const contentBase64=await fileToBase64(file);
       const uploadResponse=await fetch(`${API_URL}/v1/documents/${intent.document.id}/content`,{method:"PUT",credentials:"include",headers:{"content-type":"application/json"},body:JSON.stringify({contentBase64})});
-      if(!uploadResponse.ok)throw new Error("Document upload failed");
+      if(!uploadResponse.ok) {
+        const body = await uploadResponse.json().catch(()=>null) as {error?:string}|null;
+        throw new Error(body?.error ?? "Document upload failed.");
+      }
       setMessage("Document uploaded successfully.");
       await load();
-    }catch{setMessage("The document could not be uploaded. Start the local API and try again.");}
+    }catch(error){setMessage(error instanceof Error?error.message:"The document could not be uploaded. Please retry.");}
     finally{setBusy(false);if(inputRef.current)inputRef.current.value="";}
   }
   async function openDocument(id:string){
@@ -52,10 +62,13 @@ export default function DocumentsPanel() {
     setMessage("Opening document…");
     try{
       const response=await fetch(`${API_URL}/v1/documents/${encodeURIComponent(id)}`,{credentials:"include",cache:"no-store"});
-      if(!response.ok)throw new Error(response.status===401||response.status===403?"Sign in as the patient who uploaded this document.":"Document details could not be loaded.");
+      if(!response.ok)throw new Error(response.status===401||response.status===403?"Sign in as the patient who uploaded this document.":response.status===404?"This document is not available in your account.":"Document details could not be loaded.");
+      const details=await response.json() as {document:{contentType:string}};
       const contentResponse=await fetch(`${API_URL}/v1/documents/${encodeURIComponent(id)}/content`,{credentials:"include",cache:"no-store"});
       if(!contentResponse.ok)throw new Error(contentResponse.status===404?"The file content is not available in local storage. It may need to be uploaded again.":"You do not have access to open this document.");
       const content=await contentResponse.json() as {contentBase64:string;contentType:string;originalFileName:string};
+      if(!allowedTypes.includes(content.contentType))throw new Error("This document type cannot be previewed safely.");
+      if(content.contentType!==details.document.contentType)throw new Error("The document metadata does not match its stored content. Please upload it again.");
       const bytes=Uint8Array.from(atob(content.contentBase64),(char)=>char.charCodeAt(0));
       const url=URL.createObjectURL(new Blob([bytes],{type:content.contentType}));
       previewWindow.document.title=content.originalFileName||"CareBridge document";
