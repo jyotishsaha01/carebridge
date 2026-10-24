@@ -40,11 +40,11 @@ export async function registerNotificationPrototypeRoutes(app: FastifyInstance) 
       "Access-Control-Allow-Origin": request.headers.origin ?? "*",
       "Access-Control-Allow-Credentials": "true",
     });
-    raw.write(`event: ready\\ndata: ${JSON.stringify({ connected: true })}\\n\\n`);
+    raw.write(`event: ready\ndata: ${JSON.stringify({ connected: true })}\n\n`);
     const unsubscribe = subscribeNotifications(user.id, (notification) => {
-      raw.write(`event: notification\\ndata: ${JSON.stringify(notification)}\\n\\n`);
+      raw.write(`event: notification\ndata: ${JSON.stringify(notification)}\n\n`);
     });
-    const heartbeat = setInterval(() => raw.write(`: heartbeat\\n\\n`), 25000);
+    const heartbeat = setInterval(() => raw.write(`: heartbeat\n\n`), 25000);
     request.raw.on("close", () => {
       clearInterval(heartbeat);
       unsubscribe();
