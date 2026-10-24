@@ -20,10 +20,16 @@ export async function registerDocumentRoutes(app: FastifyInstance){
   if(!document)return reply.code(404).send({error:"Document not found"});
   let content:Buffer;
   try{content=Buffer.from(input.contentBase64,"base64");}catch{return reply.code(400).send({error:"Invalid document content"});}
+  if(content.toString("base64")!==input.contentBase64)return reply.code(400).send({error:"Invalid document content encoding"});
   if(content.length!==document.sizeBytes)return reply.code(400).send({error:"Document size does not match upload metadata"});
   if(content.length>10*1024*1024)return reply.code(413).send({error:"Documents must be 10 MB or smaller"});
   const allowedTypes=["application/pdf","image/jpeg","image/png"];
   if(!allowedTypes.includes(document.contentType))return reply.code(415).send({error:"Unsupported document type"});
+  const matchesContentType =
+    (document.contentType === "application/pdf" && content.subarray(0, 5).toString("ascii") === "%PDF-") ||
+    (document.contentType === "image/png" && content.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]))) ||
+    (document.contentType === "image/jpeg" && content.length >= 3 && content[0] === 0xff && content[1] === 0xd8 && content[2] === 0xff);
+  if(!matchesContentType)return reply.code(400).send({error:"Document content does not match the declared file type"});
   await saveDocument({storageKey:document.storageKey,content,contentType:document.contentType});
   await recordAudit(request,{actorUserId:auth.user.id,action:"PATIENT_DOCUMENT_UPLOADED",resourceType:"MedicalDocument",resourceId:document.id,outcome:"SUCCESS"});
   if (document.appointmentId) {
