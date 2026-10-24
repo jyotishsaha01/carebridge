@@ -86,6 +86,17 @@ async function main() {
   const patientCookie = await login(accounts.patient);
   const doctorCookie = await login(accounts.doctor);
   const adminCookie = await login(accounts.admin);
+
+  // Portal role mismatch handling: the UI logs out a successfully authenticated account
+  // when its role does not match the selected portal. Verify logout revokes that session.
+  const wrongPortalCookie = await login(accounts.patient);
+  r = await request("/v1/auth/me", {}, wrongPortalCookie);
+  assert.equal(r.response.status, 200);
+  assert.equal(r.body.user.role, "PATIENT");
+  r = await request("/v1/auth/logout", { method: "POST" }, wrongPortalCookie);
+  assert.equal(r.response.status, 200, "Role mismatch should be able to clear the newly created session");
+  r = await request("/v1/auth/me", {}, wrongPortalCookie);
+  assert.equal(r.response.status, 401, "Logged-out session must no longer authenticate");
   const livePatientStream = await openNotificationStream(patientCookie);
   const liveDoctorStream = await openNotificationStream(doctorCookie);
   const liveAdminStream = await openNotificationStream(adminCookie);
