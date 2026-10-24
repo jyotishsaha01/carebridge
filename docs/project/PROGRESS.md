@@ -74,7 +74,7 @@
 - [ ] Production identity provider / MFA policy
 - [ ] HIPAA/privacy/legal review and signed vendor agreements where required
 - [ ] Production encrypted object storage, malware scanning and access-control validation
-- [ ] Support attachments
+- [x] Support attachments: upload/list/retrieve endpoints, ticket-owner/admin authorization, PDF/PNG/JPEG signature checks, 5 MB limit, private storage, and audit events
 - [x] Support priority-based SLA deadlines, overdue filtering, admin escalation controls, escalation notifications, and audit logging
 - [ ] Production video provider provisioning and security review
 - [ ] Security assessment / penetration testing
@@ -101,6 +101,7 @@ Development, test and QA environments use synthetic data only. No real patient h
 - [x] Notification center API: added authenticated, user-scoped delete-one and clear-read actions; preserves unread notifications when clearing read items.
 - [x] Support workflow: added LOW/NORMAL/HIGH priority with 72/24/4-hour SLA deadlines, admin filters for overdue/escalated tickets, escalation/priority updates, notifications, and audit metadata.
 - [x] Support SLA filters parse true/false query values explicitly and combine status and overdue conditions without silently overriding each other.
+- [x] Support attachment persistence model links files to tickets and uploaders; attachment content is returned only after ticket-owner/admin authorization.
 - [x] UAT fixture uses a synthetic PDF signature and covers invalid metadata, malformed base64, and MIME/signature mismatch rejection.
 - [ ] Run API UAT integration suite and resolve any failures. CI status is not available from the latest commits yet.
 - [ ] Perform manual browser regression for patient login, questionnaire save/reload, and document preview/upload.
