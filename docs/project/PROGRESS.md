@@ -106,6 +106,7 @@ Development, test and QA environments use synthetic data only. No real patient h
 - [x] Doctor dashboard no longer renders availability slots as fake patient appointments; it loads the real doctor appointment queue, supports status filtering, and links directly to the selected appointment in the clinical workspace.
 - [x] Doctor appointment queue supports reasoned cancellation for future booked appointments with ownership/status checks, transactional slot release, patient notification, and audit logging.
 - [x] UAT fixture uses a synthetic PDF signature and covers invalid metadata, malformed base64, and MIME/signature mismatch rejection.
+- [x] API UAT now checks doctor document list/metadata/content endpoints for missing-record non-disclosure and verifies patient/admin roles cannot use doctor-only document endpoints.
 - [ ] Run API UAT integration suite and resolve any failures. CI status is not available from the latest commits yet.
 - [ ] Perform manual browser regression for patient login, questionnaire save/reload, and document preview/upload.
 
