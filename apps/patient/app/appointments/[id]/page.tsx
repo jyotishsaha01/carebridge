@@ -53,47 +53,58 @@ export default function AppointmentPage() {
 
   useEffect(() => {
     let active = true;
-    const cancellable = Boolean(
-      data &&
-      data.status === "BOOKED" &&
-      new Date(data.scheduledAt) > new Date() &&
-      (!data.consultation || !["IN_PROGRESS", "COMPLETED", "CANCELLED"].includes(data.consultation.status)),
-    );
-    if (!data || !cancellable) {
-      setAvailableSlots([]);
-      setSelectedSlot("");
-      setSlotsLoading(false);
-      return () => { active = false; };
-    }
+    const timer = window.setTimeout(() => {
+      const cancellable = Boolean(
+        data &&
+        data.status === "BOOKED" &&
+        new Date(data.scheduledAt) > new Date() &&
+        (!data.consultation || !["IN_PROGRESS", "COMPLETED", "CANCELLED"].includes(data.consultation.status)),
+      );
+      if (!data || !cancellable) {
+        setAvailableSlots([]);
+        setSelectedSlot("");
+        setSlotsLoading(false);
+        return;
+      }
 
-    setSlotsLoading(true);
-    setActionError("");
-    const from = new Date().toISOString();
-    const to = new Date(Date.now() + 60 * 24 * 60 * 60 * 1000).toISOString();
-    const url = API + "/v1/doctors/" + encodeURIComponent(data.doctor.slug) +
-      "/availability?from=" + encodeURIComponent(from) + "&to=" + encodeURIComponent(to);
-    fetch(url, { credentials: "include", cache: "no-store" })
-      .then(async (response) => {
-        const payload = await response.json().catch(() => null);
-        if (!response.ok) throw new Error(typeof payload?.error === "string" ? payload.error : "Unable to load available times.");
-        return payload as AvailabilitySlot[];
-      })
-      .then((slots) => {
-        if (!active) return;
-        const usable = slots.filter((slot) =>
-          slot.startsAt !== data.scheduledAt &&
-          new Date(slot.startsAt) > new Date() &&
-          new Date(slot.endsAt).getTime() - new Date(slot.startsAt).getTime() >= data.durationMin * 60_000,
-        );
-        setAvailableSlots(usable);
-        setSelectedSlot((current) => usable.some((slot) => slot.startsAt === current) ? current : (usable[0]?.startsAt ?? ""));
-      })
-      .catch((cause) => {
-        if (active) setActionError(cause instanceof Error ? cause.message : "Unable to load available times.");
-      })
-      .finally(() => { if (active) setSlotsLoading(false); });
-    return () => { active = false; };
-  }, [data?.id, data?.status, data?.scheduledAt, data?.doctor.slug, data?.consultation?.status]);
+      setSlotsLoading(true);
+      setActionError("");
+      const from = new Date().toISOString();
+      const to = new Date(Date.now() + 60 * 24 * 60 * 60 * 1000).toISOString();
+      const url = API + "/v1/doctors/" + encodeURIComponent(data.doctor.slug) +
+        "/availability?from=" + encodeURIComponent(from) + "&to=" + encodeURIComponent(to);
+
+      void fetch(url, { credentials: "include", cache: "no-store" })
+        .then(async (response) => {
+          const payload = await response.json().catch(() => null);
+          if (!response.ok) {
+            throw new Error(typeof payload?.error === "string" ? payload.error : "Unable to load available times.");
+          }
+          return payload as AvailabilitySlot[];
+        })
+        .then((slots) => {
+          if (!active) return;
+          const usable = slots.filter((slot) =>
+            slot.startsAt !== data.scheduledAt &&
+            new Date(slot.startsAt) > new Date() &&
+            new Date(slot.endsAt).getTime() - new Date(slot.startsAt).getTime() >= data.durationMin * 60_000,
+          );
+          setAvailableSlots(usable);
+          setSelectedSlot((current) => usable.some((slot) => slot.startsAt === current) ? current : (usable[0]?.startsAt ?? ""));
+        })
+        .catch((cause) => {
+          if (active) setActionError(cause instanceof Error ? cause.message : "Unable to load available times.");
+        })
+        .finally(() => {
+          if (active) setSlotsLoading(false);
+        });
+    }, 0);
+
+    return () => {
+      active = false;
+      window.clearTimeout(timer);
+    };
+  }, [data?.id, data?.status, data?.scheduledAt, data?.durationMin, data?.doctor.slug, data?.consultation?.status]);
 
   async function cancelAppointment() {
     if (!data || actionPending) return;
