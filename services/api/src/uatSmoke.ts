@@ -140,6 +140,41 @@ async function main() {
   assert.equal(r.response.status, 201);
   const appointmentId = r.body.id;
 
+  // Medical questionnaire regression: draft save must persist across a fresh GET.
+  r = await request(`/v1/appointments/${appointmentId}/intake`, {}, patientCookie);
+  assert.equal(r.response.status, 200, "Patient should load intake for their appointment");
+  assert.equal(r.body.appointmentId, appointmentId);
+
+  const intakeDraft = {
+    reasonForVisit: "UAT questionnaire reason",
+    symptoms: "UAT symptoms",
+    allergies: "None",
+    medications: "None",
+    medicalHistory: "UAT medical history",
+    surgeries: "None",
+    familyHistory: "UAT family history",
+    consentToConsult: false,
+  };
+  r = await request(`/v1/appointments/${appointmentId}/intake`, { method: "PUT", body: JSON.stringify(intakeDraft) }, patientCookie);
+  assert.equal(r.response.status, 200, `Questionnaire draft should save: ${JSON.stringify(r.body)}`);
+  assert.equal(r.body.status, "DRAFT");
+  assert.equal(r.body.reasonForVisit, intakeDraft.reasonForVisit);
+
+  r = await request(`/v1/appointments/${appointmentId}/intake`, {}, patientCookie);
+  assert.equal(r.response.status, 200);
+  assert.equal(r.body.reasonForVisit, intakeDraft.reasonForVisit);
+  assert.equal(r.body.symptoms, intakeDraft.symptoms);
+  assert.equal(r.body.medicalHistory, intakeDraft.medicalHistory);
+  assert.equal(r.body.familyHistory, intakeDraft.familyHistory);
+  assert.equal(r.body.consentToConsult, false);
+
+  r = await request(`/v1/appointments/${appointmentId}/intake`, { method: "PUT", body: JSON.stringify({ ...intakeDraft, reasonForVisit: "x".repeat(2001) }) }, patientCookie);
+  assert.equal(r.response.status, 400, "Overlong questionnaire fields should return a validation error");
+  assert.ok(r.body.issues?.some((issue: any) => issue.field === "reasonForVisit"));
+
+  r = await request(`/v1/appointments/${appointmentId}/intake`, {}, doctorCookie);
+  assert.equal(r.response.status, 403, "Doctor must not read a patient's intake through the patient-only endpoint");
+
   // Medical questionnaire: verify draft save, fresh-read persistence, validation, and role access.
   r = await request(`/v1/appointments/${appointmentId}/intake`, {}, patientCookie);
   assert.equal(r.response.status, 200, "Patient should load intake for their appointment");
