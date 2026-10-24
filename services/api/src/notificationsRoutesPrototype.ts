@@ -45,11 +45,13 @@ export async function registerNotificationPrototypeRoutes(app: FastifyInstance) 
       raw.write(`event: notification\ndata: ${JSON.stringify(notification)}\n\n`);
     });
     const heartbeat = setInterval(() => raw.write(`: heartbeat\n\n`), 25000);
-    request.raw.on("close", () => {
-      clearInterval(heartbeat);
-      unsubscribe();
+    await new Promise<void>((resolve) => {
+      raw.on("close", () => {
+        clearInterval(heartbeat);
+        unsubscribe();
+        resolve();
+      });
     });
-    await new Promise<void>((resolve) => request.raw.on("close", () => resolve()));
   });
   app.get("/v1/prototype/notifications", list);
 
