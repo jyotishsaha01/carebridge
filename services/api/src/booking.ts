@@ -133,7 +133,7 @@ export async function registerBookingRoutes(app: FastifyInstance, allowDemoAuth:
       return reply.code(409).send({ error: "Selected time slot is too short for this appointment" });
     }
 
-    let updatedAppointment;
+    let updatedAppointment: { id: string; scheduledAt: Date; durationMin: number; status: string };
     try {
       updatedAppointment = await prisma.$transaction(async (tx) => {
         const claimed = await tx.availabilitySlot.updateMany({
