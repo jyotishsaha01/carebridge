@@ -196,15 +196,13 @@ export async function registerSupportRoutes(app: FastifyInstance) {
     }).parse(request.query);
     const now = new Date();
     const where = {
-      ...(query.priority ? { priority: query.priority } : {}),
-      ...(query.escalated === true ? { escalatedAt: { not: null } } : query.escalated === false ? { escalatedAt: null } : {}),
       AND: [
         ...(query.status ? [{ status: query.status }] : []),
-        ...(query.overdue === true
+        ...(query.priority ? [{ priority: query.priority }] : []),
+        ...(query.escalated !== undefined ? [{ escalatedAt: query.escalated ? { not: null } : null }] : []),
+        ...(query.overdue === undefined ? [] : query.overdue
           ? [{ slaDueAt: { lt: now }, status: { notIn: ["RESOLVED", "CLOSED"] } }]
-          : query.overdue === false
-            ? [{ OR: [{ slaDueAt: null }, { slaDueAt: { gte: now } }] }]
-            : []),
+          : [{ OR: [{ slaDueAt: null }, { slaDueAt: { gte: now } }, { status: { in: ["RESOLVED", "CLOSED"] } }] }]),
       ],
     };
     return prisma.supportTicket.findMany({
