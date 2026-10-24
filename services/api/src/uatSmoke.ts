@@ -132,8 +132,17 @@ async function main() {
   r = await request("/v1/documents/upload-intent", { method: "POST", body: JSON.stringify({ fileName: "uat-note.pdf", contentType: "application/pdf", sizeBytes: documentContent.length, appointmentId }) }, patientCookie);
   assert.equal(r.response.status, 201, JSON.stringify(r.body));
   const documentId = r.body.document.id;
+  // Unauthenticated users cannot create upload intents or fetch document content.
+  r = await request("/v1/documents/upload-intent", { method: "POST", body: JSON.stringify({ fileName: "unauthorized.pdf", contentType: "application/pdf", sizeBytes: 10 }) });
+  assert.equal(r.response.status, 401, "Signed-out users must not create document upload intents");
+  r = await request("/v1/documents/" + documentId + "/content");
+  assert.equal(r.response.status, 401, "Signed-out users must not read document content");
   r = await request("/v1/documents/" + documentId + "/content", { method: "PUT", body: JSON.stringify({ contentBase64: documentContent.toString("base64") }) }, patientCookie);
   assert.equal(r.response.status, 200);
+  r = await request("/v1/documents/" + documentId + "/content", { method: "PUT", body: JSON.stringify({ contentBase64: "%%%not-base64%%%" }) }, patientCookie);
+  assert.notEqual(r.response.status, 200, "Malformed base64 must be rejected");
+  r = await request("/v1/documents/" + documentId + "/content", { method: "PUT", body: JSON.stringify({ contentBase64: Buffer.from("different length").toString("base64") }) }, patientCookie);
+  assert.equal(r.response.status, 400, "Content whose size differs from upload metadata must be rejected");
   // Document endpoints must remain patient-only, even when another authenticated role knows an ID.
   r = await request("/v1/documents/" + documentId, {}, doctorCookie);
   assert.ok(r.response.status === 401 || r.response.status === 403, "Doctor must not read patient document metadata");
