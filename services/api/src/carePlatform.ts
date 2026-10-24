@@ -63,7 +63,10 @@ export async function registerCarePlatformRoutes(app: FastifyInstance) {
     const patient = await prisma.patient.findUnique({ where: { id: updated.patientId }, select: { userId: true } });
     if (patient) await createNotification({ userId: patient.userId, role: "PATIENT", type: "SYSTEM", title: "Care request updated", body: `Your care request is now ${updated.status.toLowerCase().replaceAll("_", " ")}.` });
     await recordAudit(request, { actorUserId: user.id, action: "CARE_REQUEST_UPDATED", resourceType: "CareRequest", resourceId: updated.id, outcome: "SUCCESS", metadata: { status: updated.status } });
-    return updated;
+    return prisma.careRequest.findUnique({
+      where: { id: updated.id },
+      include: { patient: { select: { id: true, firstName: true, lastName: true, country: true } } },
+    });
   });
 
   app.post("/v1/admin/care-plans", async (request, reply) => {

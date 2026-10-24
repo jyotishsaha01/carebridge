@@ -58,12 +58,24 @@ export async function registerDoctorOperationsRoutes(app: FastifyInstance) {
       licenseNumber: z.string().trim().min(2).max(120),
       jurisdiction: z.string().trim().min(2).max(120),
       documentName: z.string().trim().max(200).optional(),
-      storageKey: z.string().trim().max(500).optional(),
     }).parse(request.body);
-    const credential = await prisma.doctorCredential.create({ data: { doctorId: user.doctor.id, ...input } });
+    const existing = await prisma.doctorCredential.findFirst({
+      where: { doctorId: user.doctor.id, type: input.type, licenseNumber: input.licenseNumber, jurisdiction: input.jurisdiction },
+      orderBy: { createdAt: "desc" },
+    });
+    const credential = await prisma.$transaction(async (tx) => {
+      const saved = existing
+        ? await tx.doctorCredential.update({
+            where: { id: existing.id },
+            data: { documentName: input.documentName ?? existing.documentName, status: "PENDING", reviewedAt: null, reviewedByUserId: null },
+          })
+        : await tx.doctorCredential.create({ data: { doctorId: user.doctor!.id, ...input } });
+      await tx.doctor.update({ where: { id: user.doctor!.id }, data: { isVerified: false, status: "PENDING" } });
+      return saved;
+    });
     await notifyUsersByRole("ADMIN", "DOCUMENT", "Doctor credential submitted", `${user.doctor.name ?? "A doctor"} submitted a credential for review.`);
-    await recordAudit(request, { actorUserId: user.id, action: "DOCTOR_CREDENTIAL_SUBMITTED", resourceType: "DoctorCredential", resourceId: credential.id, outcome: "SUCCESS" });
-    return reply.code(201).send(credential);
+    await recordAudit(request, { actorUserId: user.id, action: "DOCTOR_CREDENTIAL_SUBMITTED", resourceType: "DoctorCredential", resourceId: credential.id, outcome: "SUCCESS", metadata: { resubmitted: Boolean(existing) } });
+    return reply.code(existing ? 200 : 201).send(credential);
   });
 
   app.delete("/v1/doctor/availability/:slotId", async (request, reply) => {
