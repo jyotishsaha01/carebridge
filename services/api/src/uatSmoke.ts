@@ -182,6 +182,19 @@ async function main() {
   assert.equal(r.body.priority, "HIGH", "Admins can raise support ticket priority");
   assert.ok(r.body.escalatedAt, "Admin escalation should be timestamped");
   assert.ok(new Date(r.body.slaDueAt).getTime() > Date.now() - 60_000, "Priority changes should recalculate the SLA target");
+  // Query-string booleans must treat the literal "false" as false and preserve filters.
+  r = await request("/v1/admin/support/tickets?overdue=false&limit=100", {}, adminCookie);
+  assert.equal(r.response.status, 200);
+  assert.ok(r.body.some((ticket: any) => ticket.id === supportTicketId), "A ticket with a future SLA deadline should remain in overdue=false results");
+  r = await request("/v1/admin/support/tickets?overdue=true&limit=100", {}, adminCookie);
+  assert.equal(r.response.status, 200);
+  assert.ok(!r.body.some((ticket: any) => ticket.id === supportTicketId), "A ticket with a future SLA deadline must not appear in overdue=true results");
+  r = await request("/v1/admin/support/tickets?escalated=true&limit=100", {}, adminCookie);
+  assert.equal(r.response.status, 200);
+  assert.ok(r.body.some((ticket: any) => ticket.id === supportTicketId), "Escalated filter should include the escalated ticket");
+  r = await request("/v1/admin/support/tickets?escalated=false&limit=100", {}, adminCookie);
+  assert.equal(r.response.status, 200);
+  assert.ok(!r.body.some((ticket: any) => ticket.id === supportTicketId), "escalated=false must exclude the escalated ticket");
   await waitForLiveNotification(livePatientSupportStream, "Support request updated");
   r = await request("/v1/support/tickets/" + supportTicketId + "/messages", {}, patientCookie);
   assert.equal(r.response.status, 200);
