@@ -6,7 +6,7 @@ const API=process.env.NEXT_PUBLIC_API_URL??"http://localhost:4000";
 type Appointment={id:string;scheduledAt:string;durationMin:number;status:string;doctor:{name:string;slug:string;specialty:{name:string}};medicalIntake?:any;consultation?:any};
 export default function AppointmentPage(){
  const{id}=useParams<{id:string}>();const[data,setData]=useState<Appointment|null>(null);const[error,setError]=useState("");const[busy,setBusy]=useState(false);
- const load=useCallback(async()=>{if(!id)return;try{const r=await fetch(`${API}/v1/patient/appointments/${encodeURIComponent(id)}`,{credentials:"include"});if(!r.ok)throw new Error();setData(await r.json());setError("");}catch{setError("Sign in or check the appointment link.");}},[id]); useEffect(()=>{void load()},[load]);
+ const load=useCallback(async()=>{if(!id)return;try{const r=await fetch(`${API}/v1/patient/appointments/${encodeURIComponent(id)}`,{credentials:"include"});if(!r.ok)throw new Error();setData(await r.json());setError("");}catch{setError("Sign in or check the appointment link.");}},[id]); useEffect(()=>{if(!id)return;fetch(`${API}/v1/patient/appointments/${encodeURIComponent(id)}`,{credentials:"include"}).then(async r=>{if(!r.ok)throw new Error();return r.json();}).then(result=>{setData(result);setError("");}).catch(()=>setError("Sign in or check the appointment link."));},[id]);
  if(error)return <main style={{maxWidth:850,margin:"auto",padding:48,fontFamily:"system-ui"}}><p>{error}</p><Link href="/dashboard">← Dashboard</Link></main>;
  if(!data)return <main style={{maxWidth:850,margin:"auto",padding:48,fontFamily:"system-ui"}}>Loading appointment…</main>;
  const c=data.consultation;
