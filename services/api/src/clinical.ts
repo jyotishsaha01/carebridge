@@ -208,8 +208,17 @@ export async function registerClinicalRoutes(app: FastifyInstance) {
     const consultation = await prisma.consultation.findFirst({ where: { id: consultationId, doctorId: user.doctor.id } });
     if (!consultation) return reply.code(404).send({ error: "Consultation not found" });
     if (consultation.status !== "IN_PROGRESS") return reply.code(409).send({ error: "Clinical notes can only be saved while the consultation is in progress" });
-    const note = await prisma.clinicalNote.create({ data: { consultationId, ...input } });
-    await recordAudit(request, { actorUserId: user.id, action: "CLINICAL_NOTE_CREATED", resourceType: "ClinicalNote", resourceId: note.id, outcome: "SUCCESS" });
+    const note = await prisma.$transaction(async tx => {
+      const existing = await tx.clinicalNote.findFirst({
+        where: { consultationId },
+        orderBy: { createdAt: "desc" },
+      });
+      if (existing) {
+        return tx.clinicalNote.update({ where: { id: existing.id }, data: input });
+      }
+      return tx.clinicalNote.create({ data: { consultationId, ...input } });
+    });
+    await recordAudit(request, { actorUserId: user.id, action: "CLINICAL_NOTE_SAVED", resourceType: "ClinicalNote", resourceId: note.id, outcome: "SUCCESS" });
     return note;
   });
 
