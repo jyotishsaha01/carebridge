@@ -49,6 +49,11 @@ export async function registerDocumentRoutes(app: FastifyInstance){
       outcome: "FAILURE",
       metadata: { scanStatus: scan.status, reason: scan.reason },
     });
+    // The upload intent created metadata before the content was scanned. Remove the
+    // orphaned row so rejected or unscanned content never appears as an available document.
+    await prisma.medicalDocument.delete({ where: { id: document.id } }).catch((error) => {
+      request.log.error({ err: error, documentId: document.id }, "Failed to remove metadata for rejected document upload");
+    });
     return reply.code(scan.status === "infected" ? 422 : 503).send({
       error: scan.status === "infected"
         ? "Document was rejected by malware scanning"
