@@ -7,6 +7,7 @@ import { recordAudit } from "./audit";
 import { createNotification } from "./notificationsPrototype";
 import { saveDocument } from "./documentStoragePrototype";
 import { Buffer } from "node:buffer";
+import { scanUploadedFile } from "./malwareScanner";
 
 async function requirePatient(request: FastifyRequest, reply: FastifyReply) { const user=await requireRole(request,reply,["PATIENT"]); if(!user?.patient)return null; return {user,patient:user.patient}; }
 export async function registerDocumentRoutes(app: FastifyInstance){
@@ -37,6 +38,12 @@ export async function registerDocumentRoutes(app: FastifyInstance){
     (document.contentType === "image/jpeg" && content.length >= 3 && content[0] === 0xff && content[1] === 0xd8 && content[2] === 0xff);
   if (!matchesContentType) {
     return reply.code(400).send({ error: "Document content does not match the declared file type" });
+  }
+
+  const scan = await scanUploadedFile({ content, contentType: document.contentType, fileName: document.originalFileName });
+  if (scan.status !== "clean") {
+    await recordAudit(request, { actorUserId: auth.user.id, action: scan.status === "infected" ? "PATIENT_DOCUMENT_MALWARE_REJECTED" : "PATIENT_DOCUMENT_SCAN_UNAVAILABLE", resourceType: "MedicalDocument", resourceId: document.id, outcome: "FAILURE", metadata: { scanStatus: scan.status, reason: scan.reason } });
+    return reply.code(scan.status === "infected" ? 422 : 503).send({ error: scan.status === "infected" ? "Document was rejected by malware scanning" : "Document scanning is temporarily unavailable; upload was not stored" });
   }
 
   try {
