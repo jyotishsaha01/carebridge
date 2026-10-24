@@ -44,7 +44,7 @@ export async function registerDocumentAccessRoutes(app: FastifyInstance) {
     const doctor = await requireRole(request, reply, ["DOCTOR"]);
     if (!doctor?.doctor) return;
     const { documentId } = z.object({ documentId: z.string().min(1) }).parse(request.params);
-    const document = await prisma.medicalDocument.findUnique({ where: { id: documentId }, select: { id:true,patientId:true,appointmentId:true,originalFileName:true,contentType:true,sizeBytes:true,storageKey:true,createdAt:true } });
+    const document = await prisma.medicalDocument.findUnique({ where: { id: documentId }, select: { id:true,patientId:true,appointmentId:true,originalFileName:true,contentType:true,sizeBytes:true,createdAt:true } });
     if (!document) return reply.code(404).send({ error: "Document not found" });
     const relationship = await prisma.appointment.findFirst({ where: { patientId: document.patientId, doctorId: doctor.doctor.id }, select: { id:true } });
     if (!relationship) {
@@ -52,6 +52,6 @@ export async function registerDocumentAccessRoutes(app: FastifyInstance) {
       return reply.code(403).send({ error: "Doctor is not authorized for this document" });
     }
     await recordAudit(request, { actorUserId: doctor.id, action: "DOCTOR_DOCUMENT_VIEWED", resourceType: "MedicalDocument", resourceId: documentId, outcome: "SUCCESS" });
-    return { document, access: { mode: "provider-adapter-pending", storageKey: document.storageKey } };
+    return { document, access: { mode: "provider-adapter-pending" } };
   });
 }
