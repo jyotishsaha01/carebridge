@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { getCurrentUser } from "../../lib/api";
 
 const API = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
@@ -19,7 +19,7 @@ export default function AdminSupportPage() {
   const [queueFilter, setQueueFilter] = useState("ALL");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
-  async function load() {
+  const load = useCallback(async () => {
     const session = await getCurrentUser();
     if (session.user.role !== "ADMIN") throw new Error("Administrator access required.");
     const query = new URLSearchParams({ limit: "100" });
@@ -30,15 +30,15 @@ export default function AdminSupportPage() {
     const rows: Ticket[] = await r.json();
     const now = Date.now();
     setTickets(rows.map(t => ({ ...t, isOverdue: Boolean(t.slaDueAt && new Date(t.slaDueAt).getTime() < now && !["RESOLVED", "CLOSED"].includes(t.status)) })));
-    if (selected) { const updated = rows.find(t => t.id === selected.id); if (updated) setSelected(updated); }
-  }
+    setSelected((current) => current ? (rows.find((ticket) => ticket.id === current.id) ?? null) : null);
+  }, [queueFilter]);
   async function openTicket(ticket: Ticket) {
     setSelected(ticket); setStatus(ticket.status); setPriority(ticket.priority ?? "NORMAL"); setEscalated(Boolean(ticket.escalatedAt)); setError("");
     const r = await fetch(API + "/v1/support/tickets/" + ticket.id + "/messages", { credentials: "include" });
     if (!r.ok) { setError("Unable to load this conversation."); return; }
     setThread(await r.json());
   }
-  useEffect(() => { const timer = window.setTimeout(() => { void load().catch(e => setError(e instanceof Error ? e.message : "Unable to load support queue.")); }, 0); return () => window.clearTimeout(timer); }, []);
+  useEffect(() => { void load().catch(e => setError(e instanceof Error ? e.message : "Unable to load support queue.")); }, [load]);
   async function sendReply() {
     if (!selected || !reply.trim()) return;
     setBusy(true); setError("");
