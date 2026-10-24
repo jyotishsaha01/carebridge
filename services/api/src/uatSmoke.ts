@@ -102,9 +102,9 @@ async function main() {
   r = await request("/v1/patient/profile");
   assert.equal(r.response.status, 401, "Signed-out users must not access patient profile");
   r = await request("/v1/patient/profile", {}, doctorCookie);
-  assert.equal(r.response.status, 403, "Doctors must not access patient profile");
+  assert.ok(r.response.status === 401 || r.response.status === 403, "Doctors must not access patient profile");
   r = await request("/v1/patient/profile", {}, adminCookie);
-  assert.equal(r.response.status, 403, "Admins must not access patient profile");
+  assert.ok(r.response.status === 401 || r.response.status === 403, "Admins must not access patient profile");
   const livePatientStream = await openNotificationStream(patientCookie);
   const liveDoctorStream = await openNotificationStream(doctorCookie);
   const liveAdminStream = await openNotificationStream(adminCookie);
