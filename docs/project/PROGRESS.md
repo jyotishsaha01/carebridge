@@ -94,6 +94,9 @@ Development, test and QA environments use synthetic data only. No real patient h
 
 ## Latest functional work — 24 Oct 2026
 
+- [x] Added fail-closed malware scan enforcement to patient document uploads; scan rejections and unavailable scanner states are audited, and no bytes are stored unless the scanner returns a clean verdict.
+- [ ] Configure `MALWARE_SCANNER_URL` and validate the external scanner/credentials against synthetic test files in the target environment before release.
+
 - [x] Medical intake API: validate appointment IDs and questionnaire field lengths; return field-level 400 errors instead of unhandled validation exceptions.
 - [x] Medical intake API: enforce patient ownership before read/write and persist drafts/completed consent state with an upsert.
 - [x] UAT coverage added for questionnaire draft save, fresh-GET persistence, invalid field lengths, and doctor access denial.
