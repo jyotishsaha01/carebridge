@@ -102,6 +102,9 @@ Development, test and QA environments use synthetic data only. No real patient h
 - [x] Support workflow: added LOW/NORMAL/HIGH priority with 72/24/4-hour SLA deadlines, admin filters for overdue/escalated tickets, escalation/priority updates, notifications, and audit metadata.
 - [x] Support SLA filters parse true/false query values explicitly and combine status and overdue conditions without silently overriding each other.
 - [x] UAT fixture uses a synthetic PDF signature and covers invalid metadata, malformed base64, and MIME/signature mismatch rejection.
+- [x] Added an S3-compatible object storage provider using built-in SigV4 signing, server-side AES256 encryption headers, and 5-minute signed download URLs; document writes/reads now go through the provider abstraction.
+- [x] Production configuration fails closed if local storage is selected or required S3 credentials/encryption settings are missing; added storage provider validation tests.
+- [ ] Provision the private bucket, least-privilege IAM credentials, lifecycle/retention policy, malware scanning, and verify endpoint/region/encryption configuration in the target environment.
 - [ ] Run API UAT integration suite and resolve any failures. CI status is not available from the latest commits yet.
 - [ ] Perform manual browser regression for patient login, questionnaire save/reload, and document preview/upload.
 
