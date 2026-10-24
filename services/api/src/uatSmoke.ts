@@ -86,6 +86,7 @@ async function main() {
   assert.equal(r.response.status, 200);
   assert.ok(r.body.some((d: any) => d.slug === "dr-anil-sharma"));
   const patientCookie = await login(accounts.patient);
+  const secondPatientCookie = await login("demo-patient-two@demo.carebridge.local");
   const doctorCookie = await login(accounts.doctor);
   const adminCookie = await login(accounts.admin);
 
@@ -203,6 +204,23 @@ async function main() {
   r = await request("/v1/documents/upload-intent", { method: "POST", body: JSON.stringify({ fileName: "uat-note.pdf", contentType: "application/pdf", sizeBytes: documentContent.length, appointmentId }) }, patientCookie);
   assert.equal(r.response.status, 201, JSON.stringify(r.body));
   const documentId = r.body.document.id;
+  r = await request("/v1/documents", {}, secondPatientCookie);
+  assert.equal(r.response.status, 200);
+  assert.ok(!r.body.some((document: any) => document.id === documentId), "Document lists must be scoped to the authenticated patient");
+  r = await request("/v1/documents/upload-intent", { method: "POST", body: JSON.stringify({ fileName: "wrong-appointment.pdf", contentType: "application/pdf", sizeBytes: 10, appointmentId: "missing-appointment-for-uat" }) }, patientCookie);
+  assert.equal(r.response.status, 404, "A patient cannot attach a document to an unknown or unowned appointment");
+  r = await request("/v1/documents/upload-intent", { method: "POST", body: JSON.stringify({ fileName: "unauthorized.pdf", contentType: "application/pdf", sizeBytes: 10 }) });
+  assert.equal(r.response.status, 401, "Signed-out users must not create document upload intents");
+  r = await request("/v1/documents/" + documentId + "/content");
+  assert.equal(r.response.status, 401, "Signed-out users must not read document content");
+  r = await request("/v1/documents");
+  assert.equal(r.response.status, 401, "Signed-out users must not list patient documents");
+  r = await request("/v1/documents/" + documentId);
+  assert.equal(r.response.status, 401, "Signed-out users must not read document metadata");
+  r = await request("/v1/documents/upload-intent", { method: "POST", body: JSON.stringify({ fileName: "doctor-upload.pdf", contentType: "application/pdf", sizeBytes: 10 }) }, doctorCookie);
+  assert.equal(r.response.status, 403, "Doctors must not create patient document upload intents");
+  r = await request("/v1/documents/upload-intent", { method: "POST", body: JSON.stringify({ fileName: "admin-upload.pdf", contentType: "application/pdf", sizeBytes: 10 }) }, adminCookie);
+  assert.equal(r.response.status, 403, "Admins must not create patient document upload intents");
 
   r = await request("/v1/documents/" + documentId + "/content", { method: "PUT", body: JSON.stringify({ contentBase64: "not base64!" }) }, patientCookie);
   assert.equal(r.response.status, 400, "Malformed base64 must be rejected");
@@ -211,6 +229,16 @@ async function main() {
 
   r = await request("/v1/documents/" + documentId + "/content", { method: "PUT", body: JSON.stringify({ contentBase64: documentContent.toString("base64") }) }, patientCookie);
   assert.equal(r.response.status, 200);
+  r = await request("/v1/documents/" + documentId, {}, secondPatientCookie);
+  assert.equal(r.response.status, 404, "Other patients must not read document metadata");
+  r = await request("/v1/documents/" + documentId + "/content", {}, secondPatientCookie);
+  assert.equal(r.response.status, 404, "Other patients must not read document content");
+  r = await request("/v1/documents/upload-intent", { method: "POST", body: JSON.stringify({ fileName: "foreign-appointment.pdf", contentType: "application/pdf", sizeBytes: 10, appointmentId }) }, secondPatientCookie);
+  assert.equal(r.response.status, 404, "Patients must not attach documents to another patient's appointment");
+  r = await request("/v1/documents/upload-intent", { method: "POST", body: JSON.stringify({ fileName: "script.html", contentType: "text/html", sizeBytes: 10 }) }, patientCookie);
+  assert.notEqual(r.response.status, 201, "Unsupported document types must be rejected");
+  r = await request("/v1/documents/upload-intent", { method: "POST", body: JSON.stringify({ fileName: "oversized.pdf", contentType: "application/pdf", sizeBytes: 10 * 1024 * 1024 + 1 }) }, patientCookie);
+  assert.notEqual(r.response.status, 201, "Documents above 10 MB must be rejected");
 
   // Document ownership boundary: only the owning patient can retrieve document content.
   r = await request("/v1/documents/" + documentId + "/content", {}, doctorCookie);
