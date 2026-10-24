@@ -46,7 +46,14 @@ function parseCookies(header?: string) {
   for (const part of (header ?? "").split(";")) {
     const index = part.indexOf("=");
     if (index <= 0) continue;
-    cookies.set(part.slice(0, index).trim(), decodeURIComponent(part.slice(index + 1).trim()));
+    const name = part.slice(0, index).trim();
+    const value = part.slice(index + 1).trim();
+    try {
+      cookies.set(name, decodeURIComponent(value));
+    } catch {
+      // Ignore malformed cookie values rather than allowing them to crash authentication.
+      continue;
+    }
   }
   return cookies;
 }
