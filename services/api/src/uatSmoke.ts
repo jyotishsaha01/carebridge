@@ -159,7 +159,7 @@ async function main() {
   await waitForLiveNotification(livePatientStream, "Prescription available");
   await livePatientStream.reader.cancel();
   const liveDoctorDocumentStream = await openNotificationStream(doctorCookie);
-  const documentContent = Buffer.from("CareBridge UAT document");
+  const documentContent = Buffer.from("%PDF-1.7\n% CareBridge UAT synthetic document\n%%EOF\n");
   r = await request("/v1/documents/upload-intent", { method: "POST", body: JSON.stringify({ fileName: "uat-note.pdf", contentType: "application/pdf", sizeBytes: documentContent.length, appointmentId }) }, patientCookie);
   assert.equal(r.response.status, 201, JSON.stringify(r.body));
   const documentId = r.body.document.id;
