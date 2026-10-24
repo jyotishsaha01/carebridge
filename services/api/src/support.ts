@@ -7,6 +7,7 @@ import { getAuthenticatedUser, requireRole } from "./auth";
 import { recordAudit } from "./audit";
 import { createNotification, notifyUsersByRole, type NotificationRole } from "./notificationsPrototype";
 import { MAX_DOCUMENT_BYTES } from "./storage";
+import { scanUploadedFile } from "./malwareScanner";
 import { saveDocument, readDocument, deleteDocument } from "./documentStoragePrototype";
 
 const ticketInput = z.object({
@@ -141,6 +142,11 @@ export async function registerSupportRoutes(app: FastifyInstance) {
       (input.contentType === "image/jpeg" && bytes.length >= 3 && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff);
     if (!validSignature) return reply.code(400).send({ error: "Attachment content does not match the declared file type" });
 
+    const scan = await scanUploadedFile({ content: bytes, contentType: input.contentType, fileName: input.fileName });
+    if (scan.status !== "clean") {
+      await recordAudit(request, { actorUserId: user.id, action: scan.status === "infected" ? "SUPPORT_ATTACHMENT_MALWARE_REJECTED" : "SUPPORT_ATTACHMENT_SCAN_UNAVAILABLE", resourceType: "SupportTicket", resourceId: ticketId, outcome: "FAILURE", metadata: { scanStatus: scan.status, reason: scan.reason } });
+      return reply.code(scan.status === "infected" ? 422 : 503).send({ error: scan.status === "infected" ? "Attachment was rejected by malware scanning" : "Attachment scanning is temporarily unavailable; upload was not stored" });
+    }
     const safeName = input.fileName.replace(/[^a-zA-Z0-9._-]/g, "_").slice(0, 120) || "attachment";
     const storageKey = `support/${ticketId}/${randomUUID()}-${safeName}`;
     try {
