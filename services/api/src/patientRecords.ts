@@ -20,6 +20,9 @@ export async function registerPatientRecordsRoutes(app: FastifyInstance) {
       firstName: z.string().trim().max(100).nullable().optional(),
       lastName: z.string().trim().max(100).nullable().optional(),
       country: z.string().trim().length(2).optional(),
+      phone: z.string().trim().max(30).nullable().optional(),
+      emergencyContactName: z.string().trim().max(120).nullable().optional(),
+      emergencyContactPhone: z.string().trim().max(30).nullable().optional(),
     }).parse(request.body);
     const profile = await prisma.patient.update({ where: { id: user.patient.id }, data: input, include: { user: { select: { email: true } } } });
     await recordAudit(request, { actorUserId: user.id, action: "PATIENT_PROFILE_UPDATED", resourceType: "Patient", resourceId: profile.id, outcome: "SUCCESS" });
