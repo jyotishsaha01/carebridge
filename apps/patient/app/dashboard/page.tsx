@@ -31,19 +31,48 @@ export default function DashboardPage() {
 
   useEffect(() => {
     let stream: EventSource | null = null;
-    getCurrentUser().then(async (response) => {
-      setUser(response.user);
-      const [dashboard, notifications] = await Promise.all([
-        fetch(`${API_URL}/v1/patient/dashboard`, { credentials: "include" }),
-        fetch(`${API_URL}/v1/notifications?limit=1`, { credentials: "include" }),
-      ]);
-      if (dashboard.ok) setData(await dashboard.json());
-      if (notifications.ok) { const notificationData: NotificationData = await notifications.json(); setUnread(notificationData.unreadCount); }
-      stream = new EventSource(API_URL + "/v1/notifications/stream", { withCredentials: true });
-      stream.addEventListener("notification", () => setUnread((count) => count + 1));
-      
-    }).catch((err) => setError(err instanceof Error ? err.message : "Please sign in to view your dashboard.")).finally(() => setLoading(false));
-    return () => stream?.close();
+    let cancelled = false;
+
+    const timer = window.setTimeout(() => {
+      void getCurrentUser()
+        .then(async (response) => {
+          if (cancelled) return;
+          setUser(response.user);
+          const [dashboard, notifications] = await Promise.all([
+            fetch(`${API_URL}/v1/patient/dashboard`, { credentials: "include", cache: "no-store" }),
+            fetch(`${API_URL}/v1/notifications?limit=1`, { credentials: "include", cache: "no-store" }),
+          ]);
+          if (cancelled) return;
+
+          if (dashboard.ok) {
+            const dashboardData: DashboardData = await dashboard.json();
+            if (cancelled) return;
+            setData(dashboardData);
+          }
+          if (notifications.ok) {
+            const notificationData: NotificationData = await notifications.json();
+            if (cancelled) return;
+            setUnread(notificationData.unreadCount);
+          }
+          if (cancelled) return;
+          stream = new EventSource(API_URL + "/v1/notifications/stream", { withCredentials: true });
+          stream.addEventListener("notification", () => {
+            if (!cancelled) setUnread((count) => count + 1);
+          });
+        })
+        .catch((err) => {
+          if (!cancelled) setError(err instanceof Error ? err.message : "Please sign in to view your dashboard.");
+        })
+        .finally(() => {
+          if (!cancelled) setLoading(false);
+        });
+    }, 0);
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+      stream?.close();
+    };
   }, []);
 
   async function logout() { setSigningOut(true); try { await signOut(); router.push("/"); } catch { setSigningOut(false); setError("We could not end the session. Please try again."); } }

@@ -6,13 +6,105 @@ const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
 type Appointment = { id:string; scheduledAt:string; status:string; patient:{id:string;firstName:string|null;lastName:string|null;country:string}; medicalIntake:{status:string;reasonForVisit:string|null;symptoms:string|null;allergies:string|null;medications:string|null}|null; documents:{id:string;originalFileName:string;contentType:string;sizeBytes:number;createdAt:string}[]; consultation:{id:string;status:string;startedAt:string|null;endedAt:string|null;summary:string|null}|null };
 type PrescriptionDraft = { medication:string; dose:string; frequency:string; duration:string };
 type ClinicalRecordPayload = { consultation:Appointment["consultation"]; notes:{assessment:string|null;findings:string|null;recommendations:string|null}[]; prescription:{instructions:string|null;items:{medication:string;dose:string|null;frequency:string|null;duration:string|null;route:string|null;instructions:string|null}[]}|null; followUps:{dueAt:string|null;instructions:string|null}[] };
-const demoAppointments:Appointment[]=[{id:"demo-appointment-1",scheduledAt:new Date(Date.now()+86400000).toISOString(),status:"BOOKED",patient:{id:"demo-patient",firstName:"Demo",lastName:"Patient",country:"US"},medicalIntake:{status:"COMPLETED",reasonForVisit:"Knee pain and mobility concerns",symptoms:"Pain after walking and climbing stairs.",allergies:"None reported",medications:"Ibuprofen as needed"},documents:[],consultation:null}];
 function patientName(a:Appointment){return [a.patient.firstName,a.patient.lastName].filter(Boolean).join(" ")||"Patient";}
 export default function DoctorPage(){
- const [appointments,setAppointments]=useState(demoAppointments); const [selectedId,setSelectedId]=useState(demoAppointments[0].id); const [summary,setSummary]=useState(""); const [assessment,setAssessment]=useState(""); const [findings,setFindings]=useState(""); const [recommendations,setRecommendations]=useState(""); const [prescriptionItems,setPrescriptionItems]=useState<PrescriptionDraft[]>([{medication:"",dose:"",frequency:"",duration:""}]); const [followDue,setFollowDue]=useState(""); const [followInstructions,setFollowInstructions]=useState(""); const [recordLoading,setRecordLoading]=useState(false); const [savingAction,setSavingAction]=useState<"consultation"|"note"|"prescription"|"followUp"|null>(null); const savingActionRef=useRef<string|null>(null); const selectedIdRef=useRef(selectedId); selectedIdRef.current=selectedId; const [message,setMessage]=useState("Demo data shown. Connect the local API to load real seeded appointments.");
+ const [appointments,setAppointments]=useState<Appointment[]>([]); const [selectedId,setSelectedId]=useState(""); const [appointmentsLoading,setAppointmentsLoading]=useState(true); const [summary,setSummary]=useState(""); const [assessment,setAssessment]=useState(""); const [findings,setFindings]=useState(""); const [recommendations,setRecommendations]=useState(""); const [prescriptionItems,setPrescriptionItems]=useState<PrescriptionDraft[]>([{medication:"",dose:"",frequency:"",duration:""}]); const [followDue,setFollowDue]=useState(""); const [followInstructions,setFollowInstructions]=useState(""); const [recordLoading,setRecordLoading]=useState(false); const [savingAction,setSavingAction]=useState<"consultation"|"note"|"prescription"|"followUp"|null>(null); const savingActionRef=useRef<string|null>(null); const selectedIdRef=useRef(selectedId); const [message,setMessage]=useState("Loading appointments from the CareBridge API.");
  const selected=useMemo(()=>appointments.find(a=>a.id===selectedId)||appointments[0],[appointments,selectedId]);
- useEffect(()=>{let cancelled=false;fetch(`${API_URL}/v1/doctor/appointments`,{credentials:"include"}).then(r=>{if(!r.ok)throw new Error();return r.json() as Promise<Appointment[]>}).then(data=>{if(!cancelled&&data.length){setAppointments(data);const requestedId=new URLSearchParams(window.location.search).get("appointmentId");setSelectedId(requestedId&&data.some(appointment=>appointment.id===requestedId)?requestedId:data[0].id);setMessage("Connected to the CareBridge API.")}}).catch(()=>undefined);return()=>{cancelled=true}},[]);
- useEffect(()=>{let cancelled=false;setSummary("");setAssessment("");setFindings("");setRecommendations("");setPrescriptionItems([{medication:"",dose:"",frequency:"",duration:""}]);setFollowDue("");setFollowInstructions("");if(!selectedId||selectedId.startsWith("demo-")){setRecordLoading(false);return()=>{cancelled=true}}setRecordLoading(true);fetch(`${API_URL}/v1/doctor/appointments/${encodeURIComponent(selectedId)}/clinical-record`,{credentials:"include",cache:"no-store"}).then(async r=>{const payload=await r.json().catch(()=>null);if(!r.ok)throw new Error(typeof payload?.error==="string"?payload.error:"Unable to load saved clinical records.");return payload as ClinicalRecordPayload}).then(data=>{if(cancelled)return;setSummary(data.consultation?.summary??"");const note=data.notes?.[0];setAssessment(note?.assessment??"");setFindings(note?.findings??"");setRecommendations(note?.recommendations??"");setPrescriptionItems(data.prescription?.items?.length?data.prescription.items.map(item=>({medication:item.medication??"",dose:item.dose??"",frequency:item.frequency??"",duration:item.duration??""})):[{medication:"",dose:"",frequency:"",duration:""}]);const followUp=data.followUps?.[0];setFollowDue(followUp?.dueAt?new Date(followUp.dueAt).toISOString().slice(0,10):"");setFollowInstructions(followUp?.instructions??"");}).catch(e=>{if(!cancelled)setMessage(e instanceof Error?e.message:"Unable to load saved clinical records.")}).finally(()=>{if(!cancelled)setRecordLoading(false)});return()=>{cancelled=true}},[selectedId]);
+ useEffect(()=>{selectedIdRef.current=selectedId;},[selectedId]);
+ useEffect(() => {
+  let cancelled = false;
+  fetch(`${API_URL}/v1/doctor/appointments`, { credentials: "include", cache: "no-store" })
+    .then(async (response) => {
+      const payload = await response.json().catch(() => null);
+      if (!response.ok) {
+        throw new Error(response.status === 401 || response.status === 403
+          ? "Please sign in with an authorized doctor account to view patient appointments."
+          : (typeof payload?.error === "string" ? payload.error : "Unable to load appointments. Please retry."));
+      }
+      return payload as Appointment[];
+    })
+    .then((result) => {
+      if (cancelled) return;
+      const rows = Array.isArray(result) ? result : [];
+      setAppointments(rows);
+      const requestedId = new URLSearchParams(window.location.search).get("appointmentId");
+      const nextId = requestedId && rows.some((appointment) => appointment.id === requestedId)
+        ? requestedId
+        : (rows[0]?.id ?? "");
+      setSelectedId(nextId);
+      setMessage(rows.length ? "Connected to the CareBridge API." : "No appointments are currently assigned to this doctor.");
+    })
+    .catch((cause) => {
+      if (cancelled) return;
+      setAppointments([]);
+      setSelectedId("");
+      setMessage(cause instanceof Error ? cause.message : "Unable to load appointments. Please retry.");
+    })
+    .finally(() => {
+      if (!cancelled) setAppointmentsLoading(false);
+    });
+  return () => { cancelled = true; };
+ }, []);
+ useEffect(() => {
+  let cancelled = false;
+  const timer = window.setTimeout(() => {
+    setSummary("");
+    setAssessment("");
+    setFindings("");
+    setRecommendations("");
+    setPrescriptionItems([{ medication: "", dose: "", frequency: "", duration: "" }]);
+    setFollowDue("");
+    setFollowInstructions("");
+
+    if (!selectedId || selectedId.startsWith("demo-")) {
+      setRecordLoading(false);
+      return;
+    }
+
+    setRecordLoading(true);
+    void fetch(`${API_URL}/v1/doctor/appointments/${encodeURIComponent(selectedId)}/clinical-record`, {
+      credentials: "include",
+      cache: "no-store",
+    })
+      .then(async (response) => {
+        const payload = await response.json().catch(() => null);
+        if (!response.ok) {
+          throw new Error(typeof payload?.error === "string" ? payload.error : "Unable to load saved clinical records.");
+        }
+        return payload as ClinicalRecordPayload;
+      })
+      .then((data) => {
+        if (cancelled) return;
+        setSummary(data.consultation?.summary ?? "");
+        const note = data.notes?.[0];
+        setAssessment(note?.assessment ?? "");
+        setFindings(note?.findings ?? "");
+        setRecommendations(note?.recommendations ?? "");
+        setPrescriptionItems(data.prescription?.items?.length
+          ? data.prescription.items.map((item) => ({
+              medication: item.medication ?? "",
+              dose: item.dose ?? "",
+              frequency: item.frequency ?? "",
+              duration: item.duration ?? "",
+            }))
+          : [{ medication: "", dose: "", frequency: "", duration: "" }]);
+        const followUp = data.followUps?.[0];
+        setFollowDue(followUp?.dueAt ? new Date(followUp.dueAt).toISOString().slice(0, 10) : "");
+        setFollowInstructions(followUp?.instructions ?? "");
+      })
+      .catch((error) => {
+        if (!cancelled) setMessage(error instanceof Error ? error.message : "Unable to load saved clinical records.");
+      })
+      .finally(() => {
+        if (!cancelled) setRecordLoading(false);
+      });
+  }, 0);
+
+  return () => {
+    cancelled = true;
+    window.clearTimeout(timer);
+  };
+ }, [selectedId]);
  function beginAction(action:"consultation"|"note"|"prescription"|"followUp"){if(savingActionRef.current)return false;savingActionRef.current=action;setSavingAction(action);return true}
  function finishAction(){savingActionRef.current=null;setSavingAction(null)}
  async function refreshClinicalRecord(appointmentId:string){const r=await fetch(`${API_URL}/v1/doctor/appointments/${encodeURIComponent(appointmentId)}/clinical-record`,{credentials:"include",cache:"no-store"});const payload=await r.json().catch(()=>null);if(!r.ok)throw new Error(typeof payload?.error==="string"?payload.error:"Unable to reload saved clinical records.");if(selectedIdRef.current!==appointmentId)return;const data=payload as ClinicalRecordPayload;setSummary(data.consultation?.summary??"");const note=data.notes?.[0];setAssessment(note?.assessment??"");setFindings(note?.findings??"");setRecommendations(note?.recommendations??"");setPrescriptionItems(data.prescription?.items?.length?data.prescription.items.map(item=>({medication:item.medication??"",dose:item.dose??"",frequency:item.frequency??"",duration:item.duration??""})):[{medication:"",dose:"",frequency:"",duration:""}]);const followUp=data.followUps?.[0];setFollowDue(followUp?.dueAt?new Date(followUp.dueAt).toISOString().slice(0,10):"");setFollowInstructions(followUp?.instructions??"")}
@@ -21,6 +113,6 @@ export default function DoctorPage(){
  async function savePrescription(){if(!selected?.consultation?.id){setMessage("Start the consultation before saving a prescription.");return}const items=prescriptionItems.filter(item=>item.medication.trim()).map(item=>({medication:item.medication.trim(),dose:item.dose.trim()||null,frequency:item.frequency.trim()||null,duration:item.duration.trim()||null,route:null,instructions:null}));if(!items.length){setMessage("Enter at least one medication before saving the prescription.");return}if(!beginAction("prescription"))return;const appointmentId=selected.id;const consultationId=selected.consultation.id;try{const r=await fetch(`${API_URL}/v1/doctor/consultations/${encodeURIComponent(consultationId)}/prescription`,{method:"PUT",credentials:"include",headers:{"content-type":"application/json"},body:JSON.stringify({instructions:null,items})});const payload=await r.json().catch(()=>null);if(!r.ok){if(selectedIdRef.current===appointmentId)setMessage(typeof payload?.error==="string"?payload.error:"Unable to save prescription.");return}if(selectedIdRef.current===appointmentId){await refreshClinicalRecord(appointmentId);setMessage("Prescription saved and reloaded.")}}catch(e){if(selectedIdRef.current===appointmentId)setMessage(e instanceof Error?e.message:"Unable to save or reload prescription.")}finally{finishAction()}}
   async function openDocument(id:string){const previewWindow=window.open("about:blank","_blank");if(!previewWindow){setMessage("Your browser blocked the document preview. Allow pop-ups for this CareBridge site and try again.");return}previewWindow.opener=null;try{const r=await fetch(API_URL+"/v1/doctor/documents/"+encodeURIComponent(id)+"/content",{credentials:"include",cache:"no-store"});if(!r.ok)throw new Error(r.status===401||r.status===403?"Sign in as the doctor assigned to this appointment.":"Unable to load this document. Check that its content is available.");const d=await r.json();const bytes=Uint8Array.from(atob(d.contentBase64),(c)=>c.charCodeAt(0));const url=URL.createObjectURL(new Blob([bytes],{type:d.contentType}));previewWindow.document.title=d.originalFileName||"CareBridge document";previewWindow.location.href=url;window.setTimeout(()=>URL.revokeObjectURL(url),60000);setMessage("Document opened in the local development viewer. Production cloud storage and signed access remain release gates.")}catch(e){previewWindow.close();setMessage(e instanceof Error?e.message:"Unable to open this document.")}}
  async function saveFollowUp(){if(!selected?.consultation?.id){setMessage("Start the consultation before creating a follow-up.");return}if(!beginAction("followUp"))return;const appointmentId=selected.id;const consultationId=selected.consultation.id;try{const r=await fetch(`${API_URL}/v1/doctor/consultations/${encodeURIComponent(consultationId)}/follow-up`,{method:"POST",credentials:"include",headers:{"content-type":"application/json"},body:JSON.stringify({dueAt:followDue?new Date(followDue).toISOString():null,instructions:followInstructions||null,status:"RECOMMENDED"})});const payload=await r.json().catch(()=>null);if(!r.ok){if(selectedIdRef.current===appointmentId)setMessage(typeof payload?.error==="string"?payload.error:"Unable to add follow-up.");return}if(selectedIdRef.current===appointmentId){await refreshClinicalRecord(appointmentId);setMessage("Follow-up added and reloaded.")}}catch(e){if(selectedIdRef.current===appointmentId)setMessage(e instanceof Error?e.message:"Unable to save or reload follow-up.")}finally{finishAction()}}
- if(!selected)return null;
+ if(!selected)return <div className="shell"><main className="content"><div className="eyebrow">Provider operations</div><h1>Today&apos;s care</h1><div className="note" role={appointmentsLoading ? "status" : "alert"}>{appointmentsLoading ? "Loading appointments…" : message}</div>{!appointmentsLoading && <button className="button" onClick={() => window.location.reload()}>Retry</button>}</main></div>;
  return <div className="shell"><header className="topbar"><div><div className="brand">CareBridge</div><div className="role">Doctor Workspace</div></div><div className="role">Clinical Portal</div></header><main className="content"><div className="eyebrow">Provider operations</div><h1>Today&apos;s care</h1><p className="subtitle">Review intake, run the consultation, and complete the clinical record.</p><div className="grid"><section className="card"><h2>Appointment queue</h2><div className="queue">{appointments.map(a=><button key={a.id} className={`queueItem ${a.id===selected.id?"active":""}`} onClick={()=>setSelectedId(a.id)}><div className="row"><span className="patient">{patientName(a)}</span><span className="badge">{a.consultation?.status??a.status}</span></div><div className="meta">{new Date(a.scheduledAt).toLocaleString()} · {a.patient.country}</div></button>)}</div></section><section className="card detail"><h2>{patientName(selected)}</h2><div className="meta">Appointment {selected.id}</div><div className="section"><span className="label">Medical intake</span>{selected.medicalIntake?<div className="note"><strong>{selected.medicalIntake.reasonForVisit||"Reason not provided"}</strong><br/>Symptoms: {selected.medicalIntake.symptoms||"Not provided"}<br/>Allergies: {selected.medicalIntake.allergies||"Not provided"}<br/>Medications: {selected.medicalIntake.medications||"Not provided"}</div>:<div className="note">Medical intake has not been completed.</div>}</div><div className="section"><span className="label">Medical documents</span>{selected.documents?.length?<div className="note">{selected.documents.map(d=><button key={d.id} className="documentLink" onClick={()=>openDocument(d.id)}>{d.originalFileName} · {Math.max(1,Math.round(d.sizeBytes/1024))} KB</button>)}</div>:<div className="note">No patient documents shared yet.</div>}</div><div className="section"><label className="label" htmlFor="summary">Consultation summary</label><textarea id="summary" value={summary} onChange={e=>setSummary(e.target.value)} placeholder="Summary for the patient record"/></div><div className="actions"><button className="button" disabled={savingAction!==null||recordLoading} onClick={()=>changeConsultation("IN_PROGRESS")}>{savingAction==="consultation"?"Saving...":"Start consultation"}</button><button className="button secondary" disabled={savingAction!==null||recordLoading} onClick={()=>changeConsultation("COMPLETED")}>{savingAction==="consultation"?"Saving...":"Complete consultation"}</button></div><div className="section"><h2>Clinical assessment</h2><label className="label">Assessment<textarea value={assessment} onChange={e=>setAssessment(e.target.value)}/></label><label className="label">Findings<textarea value={findings} onChange={e=>setFindings(e.target.value)}/></label><label className="label">Recommendations<textarea value={recommendations} onChange={e=>setRecommendations(e.target.value)}/></label><button className="button" disabled={savingAction!==null||recordLoading} onClick={saveNote}>{savingAction==="note"?"Saving clinical note...":"Save clinical note"}</button></div><div className="section"><h2>Prescription</h2>{prescriptionItems.map((item,index)=><div className="note" key={index}><label className="label">Medication<input value={item.medication} onChange={e=>setPrescriptionItems(items=>items.map((current,i)=>i===index?{...current,medication:e.target.value}:current))} placeholder="Medication name"/></label><label className="label">Dose<input value={item.dose} onChange={e=>setPrescriptionItems(items=>items.map((current,i)=>i===index?{...current,dose:e.target.value}:current))} placeholder="e.g. 500 mg"/></label><label className="label">Frequency<input value={item.frequency} onChange={e=>setPrescriptionItems(items=>items.map((current,i)=>i===index?{...current,frequency:e.target.value}:current))} placeholder="e.g. twice daily"/></label><label className="label">Duration<input value={item.duration} onChange={e=>setPrescriptionItems(items=>items.map((current,i)=>i===index?{...current,duration:e.target.value}:current))} placeholder="e.g. 7 days"/></label>{prescriptionItems.length>1&&<button className="button secondary" disabled={savingAction!==null} onClick={()=>setPrescriptionItems(items=>items.filter((_,i)=>i!==index))}>Remove medication</button>}</div>)}<button className="button secondary" disabled={savingAction!==null||recordLoading} onClick={()=>setPrescriptionItems(items=>[...items,{medication:"",dose:"",frequency:"",duration:""}])}>Add medication</button><button className="button" disabled={savingAction!==null||recordLoading} onClick={savePrescription}>{savingAction==="prescription"?"Saving prescription...":"Save prescription"}</button></div><div className="section"><h2>Follow-up</h2><label className="label">Due date<input type="date" value={followDue} onChange={e=>setFollowDue(e.target.value)}/></label><label className="label">Instructions<textarea value={followInstructions} onChange={e=>setFollowInstructions(e.target.value)} placeholder="Follow-up instructions"/></label><button className="button secondary" disabled={savingAction!==null||recordLoading} onClick={saveFollowUp}>{savingAction==="followUp"?"Saving follow-up...":"Add follow-up"}</button></div><div className="note">{recordLoading?"Loading saved clinical records...":message}</div></section></div></main></div>;
 }

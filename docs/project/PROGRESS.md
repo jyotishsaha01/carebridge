@@ -120,6 +120,8 @@ Development, test and QA environments use synthetic data only. No real patient h
 - [x] Added an S3-compatible object storage provider using built-in SigV4 signing, server-side AES256 encryption headers, and 5-minute signed download URLs; document writes/reads now go through the provider abstraction.
 - [x] Production configuration fails closed if local storage is selected or required S3 credentials/encryption settings are missing; added storage provider validation tests.
 - [ ] Provision the private bucket, least-privilege IAM credentials, lifecycle/retention policy, malware scanning, and verify endpoint/region/encryption configuration in the target environment.
-- [ ] Run API UAT integration suite and resolve any failures. CI status is not available from the latest commits yet.
+- [x] CareBridge foundation checks and API UAT integration passed for the current PR #42 head; QA-only smoke was skipped because this is not a QA-targeted branch.
+- [ ] Rebase the remaining open PR branches against current `main` and rerun latest-head CI; several branches overlap in `services/api/src/documents.ts`, `services/api/src/support.ts`, and `services/api/src/uatSmoke.ts`, and GitHub currently reports them as non-mergeable.
+- [x] Removed the hard-coded demo patient fallback from the live doctor workspace; loading, empty, API-error, and retry states are shown instead.
 - [ ] Perform manual browser regression for patient login, questionnaire save/reload, and document preview/upload.
 

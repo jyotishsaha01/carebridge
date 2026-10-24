@@ -187,14 +187,14 @@ async function main() {
   r = await request(`/v1/doctor/appointments/${appointmentId}/consultation`, { method: "PUT", body: JSON.stringify({ status: "IN_PROGRESS", summary: "UAT started" }) }, doctorCookie);
   assert.equal(r.response.status, 200);
   const consultationId = r.body.id;
-  r = await request(`/v1/doctor/appointments/${appointmentId}/consultation`, { method: "PUT", body: JSON.stringify({ status: "COMPLETED", summary: "UAT completed" }) }, doctorCookie);
-  assert.equal(r.response.status, 200);
-  await waitForLiveNotification(livePatientStream, "Consultation completed");
   r = await request(`/v1/doctor/consultations/${consultationId}/note`, { method: "PUT", body: JSON.stringify({ assessment: "UAT", findings: "UAT", recommendations: "UAT" }) }, doctorCookie);
-  assert.equal(r.response.status, 200);
+  assert.equal(r.response.status, 200, "Clinical notes should be saved while the consultation is in progress");
   r = await request(`/v1/doctor/consultations/${consultationId}/prescription`, { method: "PUT", body: JSON.stringify({ instructions: "UAT", items: [{ medication: "UAT medication", dose: "1 tablet", frequency: "Once daily", duration: "7 days" }] }) }, doctorCookie);
   assert.equal(r.response.status, 200);
   await waitForLiveNotification(livePatientStream, "Prescription available");
+  r = await request(`/v1/doctor/appointments/${appointmentId}/consultation`, { method: "PUT", body: JSON.stringify({ status: "COMPLETED", summary: "UAT completed" }) }, doctorCookie);
+  assert.equal(r.response.status, 200);
+  await waitForLiveNotification(livePatientStream, "Consultation completed");
   await livePatientStream.reader.cancel();
   const liveDoctorDocumentStream = await openNotificationStream(doctorCookie);
   const documentContent = Buffer.from("%PDF-1.4\n% CareBridge UAT synthetic document\n%%EOF\n");

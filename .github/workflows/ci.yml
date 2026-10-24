@@ -3,7 +3,7 @@ name: CareBridge CI
 on:
   pull_request:
   push:
-    branches: [main, develop, test, qa, 'feature/**']
+    branches: [main, develop, test, qa, 'feature/**', 'feat/**', 'fix/**', 'security/**', 'regression/**', 'chore/**', 'hotfix/**']
 
 jobs:
   foundation-check:
