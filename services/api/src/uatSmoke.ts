@@ -196,6 +196,8 @@ async function main() {
   await livePatientStream.reader.cancel();
   const liveDoctorDocumentStream = await openNotificationStream(doctorCookie);
   const documentContent = Buffer.from("%PDF-1.4\n% CareBridge UAT synthetic document\n%%EOF\n");
+  r = await request("/v1/documents/upload-intent", { method: "POST", body: JSON.stringify({ fileName: "", contentType: "application/pdf", sizeBytes: -1, appointmentId }) }, patientCookie);
+  assert.equal(r.response.status, 400, "Invalid upload metadata should return a client validation error");
   r = await request("/v1/documents/upload-intent", { method: "POST", body: JSON.stringify({ fileName: "uat-note.pdf", contentType: "application/pdf", sizeBytes: documentContent.length, appointmentId }) }, patientCookie);
   assert.equal(r.response.status, 201, JSON.stringify(r.body));
   const documentId = r.body.document.id;
