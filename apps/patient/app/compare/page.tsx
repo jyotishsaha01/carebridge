@@ -43,7 +43,7 @@ export default function ComparePage() {
           </label>
           <label style={{ display: "grid", gap: 8, fontWeight: 700 }}>
             Currency for both estimates
-            <select value={currency} onChange={e => setCurrency(e.target.value as (typeof currencies)[number]} style={{ padding: 13, borderRadius: 12, border: "1px solid #cbd5e1", background: "white" }}>
+            <select value={currency} onChange={e => setCurrency(e.target.value as (typeof currencies)[number])} style={{ padding: 13, borderRadius: 12, border: "1px solid #cbd5e1", background: "white" }}>
               {currencies.map(code => <option key={code} value={code}>{code}</option>)}
             </select>
           </label>
