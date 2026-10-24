@@ -78,6 +78,32 @@ export default function DoctorDashboard() {
     };
   }, []);
 
+  async function cancelAppointment(appointmentId: string) {
+    const reason = window.prompt("Enter a cancellation reason for the patient (3–1,000 characters):");
+    if (reason === null) return;
+    if (reason.trim().length < 3 || reason.trim().length > 1000) {
+      setError("Cancellation reason must be between 3 and 1,000 characters.");
+      return;
+    }
+    setError("");
+    try {
+      const response = await fetch(API_URL + "/v1/doctor/appointments/" + encodeURIComponent(appointmentId) + "/cancel", {
+        method: "POST",
+        credentials: "include",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ reason: reason.trim() }),
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(payload.error ?? "Unable to cancel appointment.");
+      setAppointments((current) => current.map((appointment) =>
+        appointment.id === appointmentId ? { ...appointment, status: "CANCELLED" } : appointment
+      ));
+      setAvailableSlots((count) => count + 1);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Unable to cancel appointment.");
+    }
+  }
+
   const visible = useMemo(() => {
     const sorted = [...appointments].sort((a, b) => new Date(a.scheduledAt).getTime() - new Date(b.scheduledAt).getTime());
     return filter === "ALL" ? sorted : sorted.filter((appointment) => (appointment.consultation?.status ?? appointment.status) === filter);
@@ -124,7 +150,7 @@ export default function DoctorDashboard() {
             <div style={{ display: "grid", gap: 10 }}>
               {visible.map((appointment) => <div key={appointment.id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 20, flexWrap: "wrap", padding: 17, border: "1px solid #e4ebf2", borderRadius: 16 }}>
                 <div><b>{patientName(appointment)}</b><div style={{ color: "#718398", marginTop: 4 }}>{new Date(appointment.scheduledAt).toLocaleString()} · {appointment.patient.country}</div><div style={{ color: "#718398", marginTop: 4 }}>Intake: {appointment.medicalIntake?.status ?? "Not started"}</div></div>
-                <div style={{ display: "flex", alignItems: "center", gap: 12 }}><span style={{ fontSize: 12, fontWeight: 800, color: "#58718b" }}>{appointment.consultation?.status ?? appointment.status}</span><Link href="/" style={{ padding: "9px 12px", borderRadius: 10, background: "#1672b8", color: "white", textDecoration: "none", fontWeight: 700 }}>Open workspace</Link></div>
+                <div style={{ display: "flex", alignItems: "center", gap: 12 }}><span style={{ fontSize: 12, fontWeight: 800, color: "#58718b" }}>{appointment.consultation?.status ?? appointment.status}</span><Link href="/" style={{ padding: "9px 12px", borderRadius: 10, background: "#1672b8", color: "white", textDecoration: "none", fontWeight: 700 }}>Open workspace</Link>{appointment.status === "BOOKED" && new Date(appointment.scheduledAt).getTime() > Date.now() && <button onClick={() => void cancelAppointment(appointment.id)} style={{ padding: "9px 12px", borderRadius: 10, border: "1px solid #e6b8b8", background: "#fff7f7", color: "#a12c2c", fontWeight: 700 }}>Cancel</button>}</div>
               </div>)}
             </div>
           )}
