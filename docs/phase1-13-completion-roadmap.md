@@ -38,12 +38,13 @@ This document tracks the remaining productization work requested for the CareBri
 - Secure download/preview
 - Retention, archive and deletion policy
 
-## 07 Support & Communication
-- Support request creation
-- Conversation/thread model
-- Attachments
-- Status and escalation
-- Admin response workflow
+## 07 Support & Communication — IN PROGRESS
+- [x] Support request creation and patient request history
+- [x] Conversation/thread model persisted in the database
+- [x] Patient/admin replies with role-based ticket access
+- [x] Status updates and patient/admin notifications
+- [ ] Attachments with safe storage and malware scanning
+- [ ] Escalation rules and service-level targets
 
 ## 08 International Price Comparison
 - Country/currency context
