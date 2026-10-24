@@ -72,8 +72,8 @@ class S3CompatibleStorageProvider implements DocumentStorageProvider {
       host: url.host,
       "x-amz-content-sha256": payloadHash,
       "x-amz-date": date,
-      "x-amz-server-side-encryption": "AES256",
     };
+    if (method === "PUT") headers["x-amz-server-side-encryption"] = "AES256";
     if (contentType) headers["content-type"] = contentType;
     const signedHeaders = Object.keys(headers).sort().join(";");
     const canonicalHeaders = Object.keys(headers).sort().map(k => `${k}:${headers[k].trim()}\n`).join("");
