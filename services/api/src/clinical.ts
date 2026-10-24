@@ -189,13 +189,15 @@ export async function registerClinicalRoutes(app: FastifyInstance) {
 
     const consultation = await prisma.consultation.findFirst({
       where: { appointmentId, doctorId: user.doctor.id },
-      include: {
-        clinicalNotes: { orderBy: { createdAt: "desc" } },
-        prescription: { include: { items: true } },
-        followUps: { orderBy: { createdAt: "desc" } },
-      },
     });
-    return { consultation };
+    if (!consultation) return { consultation: null, notes: [], prescription: null, followUps: [] };
+
+    const [notes, prescription, followUps] = await Promise.all([
+      prisma.clinicalNote.findMany({ where: { consultationId: consultation.id }, orderBy: { createdAt: "desc" } }),
+      prisma.prescription.findUnique({ where: { consultationId: consultation.id }, include: { items: true } }),
+      prisma.followUp.findMany({ where: { consultationId: consultation.id }, orderBy: { createdAt: "desc" } }),
+    ]);
+    return { consultation, notes, prescription, followUps };
   });
 
   app.put("/v1/doctor/consultations/:consultationId/note", async (request, reply) => {
