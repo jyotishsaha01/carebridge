@@ -13,6 +13,7 @@ export type ApiDoctor = {
   bio: string;
   verified: boolean;
   listedAt?: string | null;
+  isNew?: boolean;
 };
 
 export type ApiSlot = {
