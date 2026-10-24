@@ -1,4 +1,5 @@
 import type { FastifyRequest } from "fastify";
+import { Prisma } from "@prisma/client";
 import { prisma } from "./server";
 
 export async function recordAudit(request: FastifyRequest, input: {
@@ -20,7 +21,7 @@ export async function recordAudit(request: FastifyRequest, input: {
       resourceType: input.resourceType,
       resourceId: input.resourceId ?? null,
       outcome: input.outcome,
-      metadata: input.metadata,
+      metadata: input.metadata as Prisma.InputJsonValue | undefined,
       ipAddress,
       userAgent,
     },
