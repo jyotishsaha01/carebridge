@@ -92,7 +92,9 @@ export async function registerSupportRoutes(app: FastifyInstance) {
       AND: [
         ...(query.status ? [{ status: query.status }] : []),
         ...(query.priority ? [{ priority: query.priority }] : []),
-        ...(query.overdue === true ? [{ slaDueAt: { lt: now }, status: { notIn: ["RESOLVED", "CLOSED"] } }] : []),
+        ...(query.overdue === undefined ? [] : query.overdue
+          ? [{ slaDueAt: { lt: now }, status: { notIn: ["RESOLVED", "CLOSED"] } }]
+          : [{ OR: [{ slaDueAt: null }, { slaDueAt: { gte: now } }, { status: { in: ["RESOLVED", "CLOSED"] } }] }]),
         ...(query.escalated !== undefined ? [{ escalatedAt: query.escalated ? { not: null } : null }] : []),
       ],
     };
