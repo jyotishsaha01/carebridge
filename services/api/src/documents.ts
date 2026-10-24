@@ -20,7 +20,9 @@ export async function registerDocumentRoutes(app: FastifyInstance){
   if(!document)return reply.code(404).send({error:"Document not found"});
   let content:Buffer;
   try{content=Buffer.from(input.contentBase64,"base64");}catch{return reply.code(400).send({error:"Invalid document content"});}
-  if(content.length!==document.sizeBytes)return reply.code(400).send({error:"Document size does not match upload metadata"});\n  if(content.length>10*1024*1024)return reply.code(413).send({error:"Documents must be 10 MB or smaller"});\n  const allowedTypes=["application/pdf","image/jpeg","image/png"];\n  if(!allowedTypes.includes(document.contentType))return reply.code(415).send({error:"Unsupported document type"});
+  if(content.length!==document.sizeBytes)return reply.code(400).send({error:"Document size does not match upload metadata"});
+  if(content.length>10*1024*1024)return reply.code(413).send({error:"Documents must be 10 MB or smaller"});
+  const allowedTypes=["application/pdf","image/jpeg","image/png"];\n  if(!allowedTypes.includes(document.contentType))return reply.code(415).send({error:"Unsupported document type"});
   await saveDocument({storageKey:document.storageKey,content,contentType:document.contentType});
   await recordAudit(request,{actorUserId:auth.user.id,action:"PATIENT_DOCUMENT_UPLOADED",resourceType:"MedicalDocument",resourceId:document.id,outcome:"SUCCESS"});
   if (document.appointmentId) {
