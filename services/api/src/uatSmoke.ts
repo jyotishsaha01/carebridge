@@ -86,6 +86,37 @@ async function main() {
   const patientCookie = await login(accounts.patient);
   const doctorCookie = await login(accounts.doctor);
   const adminCookie = await login(accounts.admin);
+
+  // Confirm each synthetic credential resolves to the expected server-side role.
+  for (const [cookie, expectedRole] of [
+    [patientCookie, "PATIENT"],
+    [doctorCookie, "DOCTOR"],
+    [adminCookie, "ADMIN"],
+  ] as const) {
+    const identity = await request("/v1/auth/me", {}, cookie);
+    assert.equal(identity.response.status, 200, "Authenticated identity endpoint should succeed");
+    assert.equal(identity.body.user.role, expectedRole, `Expected ${expectedRole} role`);
+  }
+
+  // Verify role boundaries in both directions before exercising workflows.
+  for (const [cookie, path, expectedStatus, label] of [
+    [patientCookie, "/v1/admin/overview", 403, "patient cannot access admin overview"],
+    [patientCookie, "/v1/doctor/me", 403, "patient cannot access doctor workspace"],
+    [doctorCookie, "/v1/admin/overview", 403, "doctor cannot access admin overview"],
+    [doctorCookie, "/v1/patient/dashboard", 401, "doctor cannot access patient dashboard"],
+    [adminCookie, "/v1/doctor/me", 403, "admin cannot access doctor workspace"],
+    [adminCookie, "/v1/patient/dashboard", 401, "admin cannot access patient dashboard"],
+  ] as const) {
+    const denied = await request(path, {}, cookie);
+    assert.equal(denied.response.status, expectedStatus, `RBAC check failed: ${label}`);
+  }
+
+  const invalidLogin = await request("/v1/auth/login", {
+    method: "POST",
+    body: JSON.stringify({ email: "not-a-real-account@carebridge.test", password: DEMO_PASSWORD }),
+  });
+  assert.equal(invalidLogin.response.status, 401, "Unknown account must not authenticate");
+
   const livePatientStream = await openNotificationStream(patientCookie);
   const liveDoctorStream = await openNotificationStream(doctorCookie);
   const liveAdminStream = await openNotificationStream(adminCookie);
