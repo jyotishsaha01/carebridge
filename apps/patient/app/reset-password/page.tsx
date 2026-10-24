@@ -1,12 +1,12 @@
 "use client";
 
 import Link from "next/link";
-import { FormEvent, useMemo, useState } from "react";
+import { FormEvent, Suspense, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import styles from "../login/login.module.css";
 import { resetPassword } from "../../lib/api";
 
-export default function ResetPasswordPage() {
+function ResetPasswordForm() {
   const params = useSearchParams();
   const [token, setToken] = useState(() => params.get("token") ?? "");
   const [password, setPassword] = useState("");
@@ -37,4 +37,9 @@ export default function ResetPasswordPage() {
     {message && <div className={styles.message} role="status">{message}</div>}
     <p className="microcopy"><Link href="/login">Back to sign in</Link></p>
   </section></main>;
+}
+
+
+export default function ResetPasswordPage() {
+  return <Suspense fallback={<main className={styles.shell}><section className={styles.card}>Loading password reset…</section></main>}><ResetPasswordForm /></Suspense>;
 }
