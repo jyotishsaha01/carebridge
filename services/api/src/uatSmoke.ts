@@ -96,6 +96,11 @@ async function main() {
   r = await request("/v1/appointments", { method: "POST", body: JSON.stringify({ doctorSlug: "dr-anil-sharma", scheduledAt: r.body[0].startsAt, durationMin: 30 }) }, patientCookie);
   assert.equal(r.response.status, 201);
   const appointmentId = r.body.id;
+  await waitForLiveNotification(livePatientStream, "Appointment confirmed");
+  await waitForLiveNotification(liveDoctorStream, "New appointment booked");
+  await waitForLiveNotification(liveAdminStream, "New appointment booked");
+  await liveDoctorStream.reader.cancel();
+  await liveAdminStream.reader.cancel();
   r = await request("/v1/notifications", {}, patientCookie);
   assert.ok(r.body.notifications?.some((n: any) => n.title === "Appointment confirmed"));
   r = await request("/v1/doctor/appointments", {}, doctorCookie);
