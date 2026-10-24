@@ -7,6 +7,8 @@ import {
   unreadCount,
   markNotificationRead,
   markAllNotificationsRead,
+  deleteNotification,
+  deleteReadNotifications,
   seedNotificationPrototype,
   type NotificationRole,
   type NotificationType,
@@ -73,6 +75,25 @@ export async function registerNotificationPrototypeRoutes(app: FastifyInstance) 
   };
   app.post("/v1/notifications/read-all", markAllRead);
   app.post("/v1/prototype/notifications/read-all", markAllRead);
+
+  const removeOne = async (request: FastifyRequest, reply: FastifyReply) => {
+    const user = await requireRole(request, reply, [...allowedRoles]);
+    if (!user) return;
+    const { id } = z.object({ id: z.string().min(1) }).parse(request.params);
+    const deleted = await deleteNotification(user.id, id);
+    if (!deleted) return reply.code(404).send({ error: "Notification not found" });
+    return reply.code(204).send();
+  };
+  app.delete("/v1/notifications/:id", removeOne);
+  app.delete("/v1/prototype/notifications/:id", removeOne);
+
+  const clearRead = async (request: FastifyRequest, reply: FastifyReply) => {
+    const user = await requireRole(request, reply, [...allowedRoles]);
+    if (!user) return;
+    return { deleted: await deleteReadNotifications(user.id) };
+  };
+  app.delete("/v1/notifications/read", clearRead);
+  app.delete("/v1/prototype/notifications/read", clearRead);
 
   const preferences = async (request: FastifyRequest, reply: FastifyReply) => {
     const user = await requireRole(request, reply, [...allowedRoles]);
