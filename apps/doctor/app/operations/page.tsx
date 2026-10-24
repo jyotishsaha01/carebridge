@@ -118,7 +118,7 @@ export default function OperationsPage() {
         <section style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 260px), 1fr))", gap: 16, alignItems: "end", marginTop: 24, padding: 22, background: "white", border: "1px solid #dfe8f0", borderRadius: 20 }}>
           <label style={{ display: "grid", gap: 8, fontWeight: 700 }}>
             Slot start date and time
-            <input type="datetime-local" value={start} onChange={(event) => setStart(event.target.value)} min={new Date(Date.now() + 60000).toISOString().slice(0, 16)} style={{ width: "100%", boxSizing: "border-box", padding: 12, border: "1px solid #cbd9e5", borderRadius: 10, font: "inherit" }} />
+            <input type="datetime-local" value={start} onChange={(event) => setStart(event.target.value)} style={{ width: "100%", boxSizing: "border-box", padding: 12, border: "1px solid #cbd9e5", borderRadius: 10, font: "inherit" }} />
           </label>
           <div style={{ color: "#64788d", fontSize: 14 }}>Each slot is 30 minutes. Times are converted to UTC before saving.</div>
           <button type="button" onClick={() => void add()} disabled={saving} style={{ padding: "12px 18px", borderRadius: 12, border: 0, background: saving ? "#8bb9d8" : "#1672b8", color: "white", fontWeight: 800, cursor: saving ? "wait" : "pointer" }}>{saving ? "Adding slot…" : "Add availability"}</button>
