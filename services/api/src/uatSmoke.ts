@@ -186,6 +186,7 @@ async function main() {
   r = await request("/v1/admin/support/tickets?overdue=false&limit=100", {}, adminCookie);
   assert.equal(r.response.status, 200);
   assert.ok(r.body.some((ticket: any) => ticket.id === supportTicketId), "A ticket with a future SLA deadline should remain in overdue=false results");
+  assert.ok(r.body.every((ticket: any) => !ticket.slaDueAt || new Date(ticket.slaDueAt).getTime() >= Date.now() || ["RESOLVED", "CLOSED"].includes(ticket.status)), "overdue=false must exclude unresolved tickets past their SLA deadline");
   r = await request("/v1/admin/support/tickets?overdue=true&limit=100", {}, adminCookie);
   assert.equal(r.response.status, 200);
   assert.ok(!r.body.some((ticket: any) => ticket.id === supportTicketId), "A ticket with a future SLA deadline must not appear in overdue=true results");
