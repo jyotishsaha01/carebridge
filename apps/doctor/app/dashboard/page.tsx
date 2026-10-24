@@ -30,6 +30,14 @@ export default function DoctorDashboard() {
   const [filter, setFilter] = useState("ALL");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
+  const [now, setNow] = useState<number | null>(null);
+
+  useEffect(() => {
+    const updateClock = () => setNow(Date.now());
+    updateClock();
+    const interval = window.setInterval(updateClock, 60_000);
+    return () => window.clearInterval(interval);
+  }, []);
 
   useEffect(() => {
     let stream: EventSource | null = null;
@@ -154,7 +162,7 @@ export default function DoctorDashboard() {
             <div style={{ display: "grid", gap: 10 }}>
               {visible.map((appointment) => <div key={appointment.id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 20, flexWrap: "wrap", padding: 17, border: "1px solid #e4ebf2", borderRadius: 16 }}>
                 <div><b>{patientName(appointment)}</b><div style={{ color: "#718398", marginTop: 4 }}>{new Date(appointment.scheduledAt).toLocaleString()} · {appointment.patient.country}</div><div style={{ color: "#718398", marginTop: 4 }}>Intake: {appointment.medicalIntake?.status ?? "Not started"}</div></div>
-                <div style={{ display: "flex", alignItems: "center", gap: 12 }}><span style={{ fontSize: 12, fontWeight: 800, color: "#58718b" }}>{appointment.consultation?.status ?? appointment.status}</span><Link href={"/?appointmentId=" + encodeURIComponent(appointment.id)} style={{ padding: "9px 12px", borderRadius: 10, background: "#1672b8", color: "white", textDecoration: "none", fontWeight: 700 }}>Open workspace</Link>{appointment.status === "BOOKED" && new Date(appointment.scheduledAt).getTime() > Date.now() && <button onClick={() => void cancelAppointment(appointment.id)} style={{ padding: "9px 12px", borderRadius: 10, border: "1px solid #e6b8b8", background: "#fff7f7", color: "#a12c2c", fontWeight: 700 }}>Cancel</button>}</div>
+                <div style={{ display: "flex", alignItems: "center", gap: 12 }}><span style={{ fontSize: 12, fontWeight: 800, color: "#58718b" }}>{appointment.consultation?.status ?? appointment.status}</span><Link href={"/?appointmentId=" + encodeURIComponent(appointment.id)} style={{ padding: "9px 12px", borderRadius: 10, background: "#1672b8", color: "white", textDecoration: "none", fontWeight: 700 }}>Open workspace</Link>{appointment.status === "BOOKED" && now !== null && Number.isFinite(new Date(appointment.scheduledAt).getTime()) && new Date(appointment.scheduledAt).getTime() > now && <button onClick={() => void cancelAppointment(appointment.id)} style={{ padding: "9px 12px", borderRadius: 10, border: "1px solid #e6b8b8", background: "#fff7f7", color: "#a12c2c", fontWeight: 700 }}>Cancel</button>}</div>
               </div>)}
             </div>
           )}
