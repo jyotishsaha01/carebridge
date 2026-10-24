@@ -36,6 +36,46 @@ export async function registerSupportRoutes(app: FastifyInstance) {
     return reply.code(201).send(ticket);
   });
 
+  app.get("/v1/support/tickets/:ticketId/messages", async (request, reply) => {
+    const user = await requireUser(request, reply);
+    if (!user) return;
+    const { ticketId } = z.object({ ticketId: z.string().min(1) }).parse(request.params);
+    const ticket = await prisma.supportTicket.findUnique({ where: { id: ticketId }, select: { id: true, userId: true } });
+    if (!ticket) return reply.code(404).send({ error: "Support ticket not found" });
+    if (ticket.userId !== user.id && user.role !== "ADMIN") return reply.code(403).send({ error: "You cannot access this support conversation" });
+    return prisma.supportMessage.findMany({
+      where: { ticketId },
+      include: { author: { select: { id: true, role: true } } },
+      orderBy: { createdAt: "asc" },
+      take: 200,
+    });
+  });
+
+  app.post("/v1/support/tickets/:ticketId/messages", async (request, reply) => {
+    const user = await requireUser(request, reply);
+    if (!user) return;
+    const { ticketId } = z.object({ ticketId: z.string().min(1) }).parse(request.params);
+    const input = z.object({ message: z.string().trim().min(1).max(5000) }).parse(request.body);
+    const ticket = await prisma.supportTicket.findUnique({ where: { id: ticketId } });
+    if (!ticket) return reply.code(404).send({ error: "Support ticket not found" });
+    if (ticket.userId !== user.id && user.role !== "ADMIN") return reply.code(403).send({ error: "You cannot reply to this support conversation" });
+    const message = await prisma.supportMessage.create({
+      data: { ticketId, userId: user.id, message: input.message },
+      include: { author: { select: { id: true, role: true } } },
+    });
+    await prisma.supportTicket.update({ where: { id: ticketId }, data: { updatedAt: new Date() } });
+    await recordAudit(request, { actorUserId: user.id, action: user.role === "ADMIN" ? "ADMIN_SUPPORT_MESSAGE_SENT" : "SUPPORT_MESSAGE_SENT", resourceType: "SupportTicket", resourceId: ticketId, outcome: "SUCCESS" });
+    if (user.role === "ADMIN") {
+      const owner = await prisma.user.findUnique({ where: { id: ticket.userId }, select: { id: true, role: true } });
+      if (owner && ["PATIENT", "DOCTOR", "ADMIN"].includes(owner.role)) {
+        await createNotification({ userId: owner.id, role: owner.role as NotificationRole, type: "SUPPORT", title: "Support team replied", body: "The support team replied to your request." });
+      }
+    } else {
+      await notifyUsersByRole("ADMIN", "SUPPORT", "Support request updated", "A user added a message to a support conversation.");
+    }
+    return reply.code(201).send(message);
+  });
+
   app.get("/v1/admin/support/tickets", async (request, reply) => {
     const user = await requireRole(request, reply, ["ADMIN"]);
     if (!user) return;
