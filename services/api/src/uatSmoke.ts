@@ -174,9 +174,14 @@ async function main() {
   r = await request("/v1/support/tickets", { method: "POST", body: JSON.stringify({ category: "UAT", message: "UAT support request for notification verification" }) }, patientCookie);
   assert.equal(r.response.status, 201);
   const supportTicketId = r.body.id;
+  assert.equal(r.body.priority, "NORMAL", "New support requests should start at normal priority");
+  assert.ok(r.body.slaDueAt, "New support requests should receive an SLA due date");
   await waitForLiveNotification(liveAdminSupportStream, "New support request");
-  r = await request("/v1/admin/support/tickets/" + supportTicketId, { method: "PATCH", body: JSON.stringify({ status: "IN_PROGRESS" }) }, adminCookie);
+  r = await request("/v1/admin/support/tickets/" + supportTicketId, { method: "PATCH", body: JSON.stringify({ status: "IN_PROGRESS", priority: "HIGH", escalated: true }) }, adminCookie);
   assert.equal(r.response.status, 200);
+  assert.equal(r.body.priority, "HIGH", "Admins can raise support ticket priority");
+  assert.ok(r.body.escalatedAt, "Admin escalation should be timestamped");
+  assert.ok(new Date(r.body.slaDueAt).getTime() > Date.now() - 60_000, "Priority changes should recalculate the SLA target");
   await waitForLiveNotification(livePatientSupportStream, "Support request updated");
   r = await request("/v1/support/tickets/" + supportTicketId + "/messages", {}, patientCookie);
   assert.equal(r.response.status, 200);
