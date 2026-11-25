@@ -1,71 +1,171 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { useRouter } from "next/navigation";
-import { bookAppointment, getAvailability, getDoctors, getSpecialties, type ApiDoctor, type ApiSlot } from "../lib/api";
+import Image from "next/image";
+import { getDoctors, getSpecialties, type ApiDoctor } from "../lib/api";
 import { doctors as demoDoctors, specialties as demoSpecialties } from "../data";
+import SpecialistDialog from "./specialist-dialog";
+
+const HERO_IMAGES = Array.from({ length: 10 }, (_, index) => `/images/hero/care-${String(index + 1).padStart(2, "0")}.jpg`);
+const ALLOW_DEMO_CATALOG = process.env.NODE_ENV !== "production";
 
 export default function Home() {
-  const router = useRouter();
   const [query, setQuery] = useState("");
   const [specialty, setSpecialty] = useState("All specialties");
-  const [doctorList, setDoctorList] = useState<ApiDoctor[]>(demoDoctors as ApiDoctor[]);
-  const [specialtyList, setSpecialtyList] = useState<string[]>(demoSpecialties);
+  const [doctorList, setDoctorList] = useState<ApiDoctor[]>([]);
+  const [specialtyList, setSpecialtyList] = useState<string[]>(ALLOW_DEMO_CATALOG ? demoSpecialties : []);
   const [selectedDoctor, setSelectedDoctor] = useState<ApiDoctor | null>(null);
-  const [slots, setSlots] = useState<ApiSlot[]>([]);
-  const [selectedSlot, setSelectedSlot] = useState<ApiSlot | null>(null);
-  const [bookingState, setBookingState] = useState<"idle" | "loading" | "success" | "error">("idle");
-  const [apiState, setApiState] = useState<"loading" | "connected" | "fallback">("loading");
+  const [apiState, setApiState] = useState<"loading" | "connected" | "fallback" | "error">("loading");
+  const [retry, setRetry] = useState(0);
+  const [activeHeroImage, setActiveHeroImage] = useState(0);
 
   useEffect(() => {
-    let active = true;
-    Promise.all([getDoctors(), getSpecialties()]).then(([doctorsResponse, specialtiesResponse]) => {
-      if (!active) return;
-      setDoctorList(doctorsResponse); setSpecialtyList(specialtiesResponse.map((item) => item.name)); setApiState("connected");
-    }).catch(() => { if (active) setApiState("fallback"); });
-    return () => { active = false; };
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    const timer = window.setInterval(() => {
+      if (document.visibilityState === "visible") {
+        setActiveHeroImage((current) => (current + 1) % HERO_IMAGES.length);
+      }
+    }, 3000);
+    return () => window.clearInterval(timer);
   }, []);
 
   useEffect(() => {
     let active = true;
-    getDoctors({ specialty, q: query }).then((result) => { if (active) { setDoctorList(result); setApiState("connected"); } }).catch(() => { if (active) setApiState("fallback"); });
+    getSpecialties().then((specialtiesResponse) => {
+      if (!active) return;
+      setSpecialtyList(specialtiesResponse.map((item) => item.name));
+    }).catch(() => { /* Discovery reports its own actionable connection state. */ });
     return () => { active = false; };
-  }, [query, specialty]);
+  }, [retry]);
+
+  useEffect(() => {
+    let active = true;
+    const timer = window.setTimeout(() => {
+      setApiState("loading");
+      getDoctors({ specialty, q: query.trim() }).then((result) => {
+        if (active) { setDoctorList(result); setApiState("connected"); }
+      }).catch(() => {
+        if (!active) return;
+        setDoctorList(ALLOW_DEMO_CATALOG ? demoDoctors as ApiDoctor[] : []);
+        setApiState(ALLOW_DEMO_CATALOG ? "fallback" : "error");
+      });
+    }, 250);
+    return () => { active = false; window.clearTimeout(timer); };
+  }, [query, specialty, retry]);
 
   const filteredDoctors = useMemo(() => {
-    if (apiState === "connected") return doctorList;
     const normalized = query.trim().toLowerCase();
     return doctorList.filter((doctor) => {
       const matchesSpecialty = specialty === "All specialties" || doctor.specialty === specialty;
       const matchesQuery = !normalized || [doctor.name, doctor.specialty, doctor.expertise.join(" "), doctor.location].join(" ").toLowerCase().includes(normalized);
       return matchesSpecialty && matchesQuery;
     });
-  }, [apiState, doctorList, query, specialty]);
+  }, [doctorList, query, specialty]);
 
-  async function openDoctor(doctor: ApiDoctor) {
-    setSelectedDoctor(doctor); setSelectedSlot(null); setBookingState("idle");
-    const from = new Date(); const to = new Date(from.getTime() + 14 * 24 * 60 * 60 * 1000);
-    try { setSlots(await getAvailability(doctor.id, from, to)); } catch { setSlots([]); }
-  }
-
-  async function reserveSlot() {
-    if (!selectedDoctor || !selectedSlot) return;
-    setBookingState("loading");
-    try {
-      const appointment = await bookAppointment(selectedDoctor.id, selectedSlot.startsAt);
-      router.push(`/appointments/${encodeURIComponent(appointment.id)}`);
-    } catch { setBookingState("error"); }
+  function scrollToSpecialists(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    document.getElementById("specialists")?.scrollIntoView({ behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" });
   }
 
   return (
     <main className="site-shell">
-      <header className="topbar"><a className="brand" href="#top" aria-label="CareBridge home"><span className="brand-mark">C</span><span>CareBridge</span></a><nav className="nav-links" aria-label="Primary navigation"><a href="#specialists">Find Specialists</a><a href="#how-it-works">How It Works</a><a href="#smart-cost">Smart Cost</a><a className="nav-login" href="/login">Sign in</a></nav></header>
-      <section id="top" className="hero"><div className="hero-copy"><div className="eyebrow">GLOBAL HEALTHCARE · TRUSTED CARE · SMARTER COSTS</div><h1>Expert medical care, <span>without the premium price.</span></h1><p>Connect with qualified specialists through convenient virtual consultations. Understand the cost difference before you book.</p><div className="hero-actions"><a className="button primary" href="#specialists">Find a Specialist</a><a className="button ghost" href="#how-it-works">See how it works</a></div><div className="trust-row"><span>✓ Qualified specialists</span><span>✓ Secure records</span><span>✓ Transparent pricing</span></div></div><div className="hero-card" aria-label="Smart Cost example"><div className="floating-dot dot-one" /><div className="floating-dot dot-two" /><div className="hero-card-top"><span>CAREBRIDGE SMART COST</span><span className="live-pill">DEMO BENCHMARK</span></div><div className="specialist-mini"><div className="avatar avatar-large">AS</div><div><strong>Dr. Anil Sharma</strong><span>Orthopedic Specialist</span></div></div><div className="price-grid"><div><span>CareBridge</span><strong>$25</strong></div><div><span>Comparable US estimate</span><strong>$150–$350</strong></div></div><div className="savings"><span>Estimated difference</span><strong>$125–$325</strong></div><p className="microcopy">Illustrative estimate. Actual comparable pricing varies by provider, location, specialty and insurance.</p></div></section>
-      <section id="specialists" className="content-section"><div className="section-heading"><div><div className="eyebrow">SPECIALIST NETWORK</div><h2>Find care that fits your needs.</h2></div><p>Search by specialty, doctor or area of expertise.</p></div><div className="search-row"><label className="search-box"><span>⌕</span><input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search doctors or specialties" aria-label="Search doctors or specialties" /></label><select value={specialty} onChange={(e) => setSpecialty(e.target.value)} aria-label="Filter by specialty"><option>All specialties</option>{specialtyList.map((item) => <option key={item}>{item}</option>)}</select></div>{apiState === "fallback" && <div className="empty-state">API is offline, so the page is showing synthetic demo data. Start PostgreSQL and the CareBridge API to use live discovery and booking.</div>}<div className="doctor-grid">{filteredDoctors.map((doctor) => <article className="doctor-card" key={doctor.id}><div className="doctor-card-top"><div className="avatar">{doctor.initials}</div><span className="verified">✓ Verified</span></div><h3>{doctor.name}</h3><p className="doctor-specialty">{doctor.specialty}</p><div className="rating">★ {doctor.rating} <span>·</span> {doctor.experience} years experience</div><div className="expertise-row">{doctor.expertise.slice(0, 3).map((item) => <span key={item}>{item}</span>)}</div><div className="doctor-meta"><span>📍 {doctor.location}</span><span>🗣 English</span></div><div className="doctor-price"><div><span>Consultation</span><strong>${doctor.price}</strong></div><div className="us-compare"><span>US estimate</span><strong>{doctor.usLow && doctor.usHigh ? `$${doctor.usLow}–$${doctor.usHigh}` : "See profile"}</strong></div></div><button className="button dark full" onClick={() => openDoctor(doctor)}>View specialist</button></article>)}</div>{!filteredDoctors.length && <div className="empty-state">No specialists match your search. Try a broader term or specialty.</div>}</section>
-      <section id="smart-cost" className="smart-section"><div><div className="eyebrow">SMART COST</div><h2>Don't just hear that healthcare can cost less. <span>See the difference.</span></h2><p>Every consultation can show an estimated comparable US self-pay range so patients can make a more informed decision before booking.</p></div><div className="comparison-card"><div><span>Your CareBridge price</span><strong>$25</strong></div><div className="arrow">→</div><div><span>Comparable US estimate</span><strong>$150–$350</strong></div><div className="comparison-badge">Estimated difference<br /><strong>$125–$325</strong></div></div></section>
-      <section id="how-it-works" className="content-section compact"><div className="section-heading"><div><div className="eyebrow">HOW IT WORKS</div><h2>One simple consultation journey.</h2></div></div><div className="steps"><div><b>01</b><h3>Choose a specialist</h3><p>Browse qualified providers and compare pricing.</p></div><div><b>02</b><h3>Share your information</h3><p>Provide relevant history and upload supporting records.</p></div><div><b>03</b><h3>Meet by video</h3><p>Complete your consultation and receive the doctor's next steps.</p></div><div><b>04</b><h3>Stay connected</h3><p>Keep your summary, prescription and follow-up in one place.</p></div></div></section>
-      <footer className="footer"><div><strong>CareBridge</strong><span>Global Healthcare. Trusted Care. Smarter Costs.</span></div><small>Demo product environment · Synthetic data only</small></footer>
-      {selectedDoctor && <div className="modal-backdrop" onClick={() => setSelectedDoctor(null)}><div className="modal" onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true" aria-label={`${selectedDoctor.name} specialist profile`}><button className="modal-close" onClick={() => setSelectedDoctor(null)} aria-label="Close">×</button><div className="doctor-card-top"><div className="avatar avatar-large">{selectedDoctor.initials}</div><span className="verified">✓ Verified</span></div><h2>{selectedDoctor.name}</h2><p className="doctor-specialty">{selectedDoctor.specialty}</p><p>{selectedDoctor.bio}</p><div className="modal-price"><div><span>CareBridge consultation</span><strong>${selectedDoctor.price}</strong></div><div><span>Comparable US estimate</span><strong>{selectedDoctor.usLow && selectedDoctor.usHigh ? `$${selectedDoctor.usLow}–$${selectedDoctor.usHigh}` : "Not available"}</strong></div></div><p className="microcopy">{apiState === "connected" ? "Live availability from the local CareBridge API." : "Demo profile. Start the API for live availability."}</p>{slots.length > 0 ? <div><h3>Choose a consultation time</h3><div className="expertise-row">{slots.slice(0, 8).map((slot) => <button className={`button ${selectedSlot?.id === slot.id ? "primary" : "ghost"}`} key={slot.id} onClick={() => setSelectedSlot(slot)}>{new Date(slot.startsAt).toLocaleString([], { weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}</button>)}</div></div> : <div className="empty-state">No live slots are available. Run the database seed to create local demo availability.</div>}<button className="button primary full" disabled={!selectedSlot || bookingState === "loading" || apiState !== "connected"} onClick={reserveSlot}>{bookingState === "loading" ? "Reserving…" : "Reserve & continue to payment →"}</button>{bookingState === "error" && <p className="microcopy">The slot could not be reserved. Refresh availability and try again.</p>}<p className="microcopy">Booking is local development only; the payment page uses the synthetic provider.</p></div></div>}
+      <header className="topbar">
+        <a className="brand" href="#top" aria-label="CareBridge home">
+          <span className="brand-mark" aria-hidden="true"><i /><i /></span>
+          <span>CareBridge</span>
+        </a>
+        <nav className="nav-links" aria-label="Primary navigation">
+          <a className="nav-primary" href="#specialists">Find a specialist</a>
+          <a href="#how-it-works">How it works</a>
+          <a href="#smart-cost">Pricing</a>
+          <a className="nav-login" href="/login">Sign in</a>
+        </nav>
+      </header>
+
+      <section id="top" className="hero" aria-labelledby="hero-title">
+        <div className="hero-background" aria-hidden="true">
+          {HERO_IMAGES.map((src, index) => (
+            <Image className={`hero-photo${activeHeroImage === index ? " active" : ""}`} src={src} alt="" fill sizes="100vw" quality={78} priority={index === 0} key={src} />
+          ))}
+        </div>
+        <div className="hero-copy">
+          <div className="eyebrow hero-eyebrow"><span className="eyebrow-rule" /> CARE THAT CROSSES BORDERS</div>
+          <h1 id="hero-title">CareBridge<span>.</span></h1>
+          <h2>Specialist care, made more human.</h2>
+          <p>Meet trusted clinicians online, understand your options, and know the cost before you choose.</p>
+
+          <form className="hero-search" role="search" onSubmit={scrollToSpecialists}>
+            <label className="hero-search-query">
+              <span>What kind of care are you looking for?</span>
+              <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Try skin, joints, or a doctor" aria-label="Search doctors or specialties" />
+            </label>
+            <label className="hero-search-specialty">
+              <span>Specialty</span>
+              <select value={specialty} onChange={(event) => setSpecialty(event.target.value)} aria-label="Filter by specialty">
+                <option>All specialties</option>
+                {specialtyList.map((item) => <option key={item}>{item}</option>)}
+              </select>
+            </label>
+            <button className="button primary search-submit" type="submit">Explore care <span aria-hidden="true">→</span></button>
+          </form>
+
+          <div className="hero-proof" aria-label="CareBridge commitments">
+            <span><b aria-hidden="true">✓</b> Verified clinicians</span>
+            <span><b aria-hidden="true">✓</b> Upfront estimates</span>
+            <span><b aria-hidden="true">✓</b> Secure records</span>
+          </div>
+        </div>
+        <a className="hero-scroll" href="#specialists"><span aria-hidden="true">↓</span> Explore the network</a>
+      </section>
+
+      <section className="trust-strip" aria-label="CareBridge highlights">
+        <div><span className="trust-number">{specialtyList.length || "—"}</span><span>specialties to explore</span></div>
+        <div><span className="trust-symbol" aria-hidden="true">01</span><span>Care led by specialists</span></div>
+        <div><span className="trust-symbol" aria-hidden="true">02</span><span>Clear costs before booking</span></div>
+        <div><span className="trust-symbol" aria-hidden="true">03</span><span>Your care, in one place</span></div>
+      </section>
+
+      <section id="specialists" className="content-section">
+        <div className="section-heading">
+          <div><div className="eyebrow">A BETTER PLACE TO BEGIN</div><h2>Find care that fits your life.</h2></div>
+          <p>Explore experienced clinicians by specialty, name, or area of expertise. Start with a question; we’ll help you find the right next step.</p>
+        </div>
+        <div className="search-row">
+          <label className="search-box"><span aria-hidden="true">⌕</span><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search doctors or specialties" aria-label="Search doctors or specialties" /></label>
+          <select value={specialty} onChange={(event) => setSpecialty(event.target.value)} aria-label="Filter by specialty"><option>All specialties</option>{specialtyList.map((item) => <option key={item}>{item}</option>)}</select>
+        </div>
+        {apiState === "loading" && <p className="empty-state" role="status">Finding specialists…</p>}
+        {apiState === "fallback" && <div className="empty-state" role="status">Preview catalog · These are synthetic demo specialists. Booking is unavailable while the service is offline.</div>}
+        {apiState === "error" && <div className="empty-state" role="alert">We couldn’t load specialists. Please check your connection. <button className="button ghost" onClick={() => setRetry((value) => value + 1)}>Try again</button></div>}
+        <div className="doctor-grid" aria-live="polite" aria-busy={apiState === "loading"}>
+          {filteredDoctors.map((doctor) => (
+            <article className="doctor-card" key={doctor.id}>
+              <div className="doctor-card-top"><div className="avatar" aria-hidden="true">{doctor.initials}</div>{doctor.verified && <span className="verified"><span aria-hidden="true">✓</span> {apiState === "fallback" ? "Demo profile" : "Verified"}</span>}</div>
+              <h3>{doctor.name}</h3><p className="doctor-specialty">{doctor.specialty}</p>
+              <div className="rating"><span aria-label={`${doctor.rating} out of 5 stars`}>★ {doctor.rating}</span><span className="rating-divider">/</span>{doctor.experience} years experience</div>
+              <div className="expertise-row">{doctor.expertise.slice(0, 3).map((item) => <span key={item}>{item}</span>)}</div>
+              <div className="doctor-meta"><span>{doctor.location}</span><span>Consultations in English</span></div>
+              <div className="doctor-price"><div><span>Consultation</span><strong>${doctor.price}</strong></div><div className="us-compare"><span>US estimate</span><strong>{doctor.usLow && doctor.usHigh ? `$${doctor.usLow}–$${doctor.usHigh}` : "See profile"}</strong></div></div>
+              <button className="button dark full" onClick={() => setSelectedDoctor(doctor)}>View specialist <span aria-hidden="true">→</span></button>
+            </article>
+          ))}
+        </div>
+        {!filteredDoctors.length && (apiState === "connected" || apiState === "fallback") && <div className="empty-state">No specialists match that search. Try a broader term or choose another specialty.</div>}
+      </section>
+
+      <section id="smart-cost" className="smart-section">
+        <div className="smart-copy"><div className="eyebrow">COST, MADE CLEAR</div><h2>Know what care may cost <span>before you decide.</span></h2><p>Compare a CareBridge consultation with an illustrative US self-pay range. See the assumptions up front, with no promise of guaranteed savings.</p><a className="text-link" href="#specialists">Explore specialists <span aria-hidden="true">→</span></a></div>
+        <div className="comparison-card" aria-label="Illustrative consultation price comparison"><div><span>CareBridge consultation</span><strong>$25</strong></div><div className="comparison-separator" aria-hidden="true">/</div><div><span>Comparable US estimate</span><strong>$150–$350</strong></div><p>Example estimate only. Actual prices depend on provider, location, specialty, and insurance.</p></div>
+      </section>
+
+      <section id="how-it-works" className="content-section compact">
+        <div className="section-heading"><div><div className="eyebrow">A CLEARER CARE JOURNEY</div><h2>Good care keeps going.</h2></div><p>From the first conversation to the next step, your care stays connected.</p></div>
+        <div className="steps"><article><b>01</b><h3>Choose your specialist</h3><p>Browse clinicians, compare estimates, and see available times.</p></article><article><b>02</b><h3>Share what matters</h3><p>Complete your intake and securely share relevant records.</p></article><article><b>03</b><h3>Meet online</h3><p>Talk with your clinician from wherever you are.</p></article><article><b>04</b><h3>Stay connected</h3><p>Keep your summary, care plan, and follow-up in one place.</p></article></div>
+      </section>
+
+      <footer className="footer"><div><a className="brand footer-brand" href="#top"><span className="brand-mark" aria-hidden="true"><i /><i /></span><span>CareBridge</span></a><span>Global healthcare. Trusted care. Smarter costs.</span></div><small>{ALLOW_DEMO_CATALOG ? "Development environment · Synthetic data only" : "CareBridge · Specialist consultations"}</small></footer>
+
+      {selectedDoctor && <SpecialistDialog doctor={selectedDoctor} live={apiState === "connected"} onClose={() => setSelectedDoctor(null)} />}
     </main>
   );
 }

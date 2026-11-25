@@ -8,13 +8,13 @@ import { createNotification, notifyUsersByRole } from "./notificationsPrototype"
 const bookingRequest = z.object({
   doctorSlug: z.string().min(1),
   scheduledAt: z.coerce.date(),
-  durationMin: z.number().int().min(15).max(90).default(30),
+  durationMin: z.number().int().min(15).max(90).optional(),
 });
 
 export async function registerBookingRoutes(app: FastifyInstance, allowDemoAuth: boolean) {
   app.get("/v1/doctors/:slug/availability", async (request, reply) => {
     const params = z.object({ slug: z.string().min(1) }).parse(request.params);
-    const query = z.object({ from: z.coerce.date(), to: z.coerce.date() }).parse(request.query);
+    const query = z.object({ from: z.coerce.date(), to: z.coerce.date() }).refine((range) => range.to > range.from && range.to.getTime() - range.from.getTime() <= 90 * 86400_000, { message: "Availability range must be between 1 and 90 days" }).parse(request.query);
     const doctor = await prisma.doctor.findFirst({
       where: { slug: params.slug, isActive: true, isVerified: true },
       select: { id: true },
@@ -22,7 +22,7 @@ export async function registerBookingRoutes(app: FastifyInstance, allowDemoAuth:
     if (!doctor) return reply.code(404).send({ error: "Doctor not found" });
 
     const slots = await prisma.availabilitySlot.findMany({
-      where: { doctorId: doctor.id, startsAt: { gte: query.from, lt: query.to }, status: "AVAILABLE" },
+      where: { doctorId: doctor.id, startsAt: { gte: new Date(Math.max(query.from.getTime(), Date.now())), lt: query.to }, status: "AVAILABLE" },
       orderBy: { startsAt: "asc" },
     });
     return slots.map((slot) => ({
@@ -35,6 +35,7 @@ export async function registerBookingRoutes(app: FastifyInstance, allowDemoAuth:
 
   app.post("/v1/appointments", async (request, reply) => {
     const input = bookingRequest.parse(request.body);
+    if (input.scheduledAt <= new Date()) return reply.code(400).send({ error: "Appointments must be scheduled in the future" });
     const user = await requireRole(request, reply, ["PATIENT"]);
     if (!user?.patient) return;
 
@@ -48,11 +49,15 @@ export async function registerBookingRoutes(app: FastifyInstance, allowDemoAuth:
       where: { doctorId: doctor.id, startsAt: input.scheduledAt, status: "AVAILABLE" },
     });
     if (!slot) return reply.code(409).send({ error: "Selected time is no longer available" });
+    const durationMin = (slot.endsAt.getTime() - slot.startsAt.getTime()) / 60_000;
+    if (!Number.isInteger(durationMin) || durationMin < 15 || durationMin > 90 || (input.durationMin !== undefined && input.durationMin !== durationMin)) {
+      return reply.code(409).send({ error: "The requested duration does not match the available slot" });
+    }
 
     try {
       const appointment = await prisma.$transaction(async (tx) => {
         const claimed = await tx.availabilitySlot.updateMany({
-          where: { id: slot.id, status: "AVAILABLE" },
+          where: { id: slot.id, status: "AVAILABLE", startsAt: { gt: new Date() } },
           data: { status: "BOOKED" },
         });
         if (claimed.count !== 1) throw new Error("SLOT_ALREADY_BOOKED");
@@ -61,7 +66,7 @@ export async function registerBookingRoutes(app: FastifyInstance, allowDemoAuth:
             patientId: user.patient!.id,
             doctorId: doctor.id,
             scheduledAt: input.scheduledAt,
-            durationMin: input.durationMin,
+            durationMin,
             status: "BOOKED",
           },
           select: { id: true, scheduledAt: true, durationMin: true, status: true },
@@ -76,6 +81,7 @@ export async function registerBookingRoutes(app: FastifyInstance, allowDemoAuth:
         outcome: "SUCCESS",
       });
 
+      try {
       const doctorUser = await prisma.user.findFirst({
         where: { doctor: { id: doctor.id } },
         select: { id: true },
@@ -101,6 +107,9 @@ export async function registerBookingRoutes(app: FastifyInstance, allowDemoAuth:
         });
       }
 
+      } catch {
+        request.log.error({ appointmentId: appointment.id }, "Appointment notification delivery failed");
+      }
       return reply.code(201).send({
         id: appointment.id,
         scheduledAt: appointment.scheduledAt.toISOString(),

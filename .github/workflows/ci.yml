@@ -3,89 +3,191 @@ name: CareBridge CI
 on:
   pull_request:
   push:
-    branches: [main, develop, test, qa, 'feature/**']
+    branches: [main, develop, test, qa, 'feature/**', 'codex/**']
+
+permissions:
+  contents: read
+
+concurrency:
+  group: carebridge-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  NEXT_TELEMETRY_DISABLED: '1'
+  NEXT_PUBLIC_API_URL: https://api.carebridge.test
+  NEXT_PUBLIC_DOCTOR_APP_URL: https://doctor.carebridge.test
+  NEXT_PUBLIC_ADMIN_APP_URL: https://admin.carebridge.test
 
 jobs:
   foundation-check:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v4
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
         with:
           version: 10.15.0
           run_install: false
-      - name: Setup Node
-        uses: actions/setup-node@v4
+      - uses: actions/setup-node@v4
         with:
           node-version: 22
-      - name: Install dependencies
-        run: pnpm install --no-frozen-lockfile
-      - name: Generate Prisma client
-        run: pnpm --filter @carebridge/database exec prisma generate
-      - name: Lint
-        run: pnpm lint
-      - name: Typecheck
-        run: pnpm typecheck
-      - name: Unit tests
-        run: pnpm test
-      - name: Build
-        run: pnpm build
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm db:generate
+      - run: pnpm check
+      - name: Audit application and tooling dependencies
+        run: pnpm audit --audit-level high
 
   uat-integration:
     needs: foundation-check
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        database: [sqlite, postgresql]
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: carebridge_ci
+          POSTGRES_PASSWORD: synthetic_ci_only
+          POSTGRES_DB: carebridge_ci
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U carebridge_ci -d carebridge_ci"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      NODE_ENV: test
+      ALLOW_DEMO_AUTH: 'false'
+      DATABASE_URL: postgresql://carebridge_ci:synthetic_ci_only@127.0.0.1:5432/carebridge_ci
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v4
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
         with:
           version: 10.15.0
           run_install: false
-      - name: Setup Node
-        uses: actions/setup-node@v4
+      - uses: actions/setup-node@v4
         with:
           node-version: 22
-      - name: Install dependencies
-        run: pnpm install --no-frozen-lockfile
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
       - name: Create ephemeral UAT credentials
-        run: echo "CAREBRIDGE_UAT_PASSWORD=UAT-$(openssl rand -hex 16)-2026!" >> "$GITHUB_ENV"
-      - name: Prepare synthetic UAT database
-        run: pnpm db:setup
-      - name: Start API
-        env:
-          ALLOW_DEMO_AUTH: "true"
-          NODE_ENV: test
         run: |
-          nohup pnpm --filter @carebridge/api dev > /tmp/carebridge-api.log 2>&1 &
+          echo "CAREBRIDGE_UAT_PASSWORD=UAT-$(openssl rand -hex 16)-2026!" >> "$GITHUB_ENV"
+          echo "CAREBRIDGE_DEMO_WEBHOOK_SECRET=$(openssl rand -hex 32)" >> "$GITHUB_ENV"
+      - name: Prepare synthetic SQLite database
+        if: matrix.database == 'sqlite'
+        run: |
+          echo 'DATABASE_URL=file:./dev.db' >> "$GITHUB_ENV"
+          DATABASE_URL=file:./dev.db pnpm db:setup
+      - name: Prepare synthetic PostgreSQL database
+        if: matrix.database == 'postgresql'
+        run: |
+          pnpm db:generate:production
+          pnpm db:deploy:production
+          pnpm --filter @carebridge/database db:seed
+          pnpm db:status:production
+          pnpm db:drift:production
+      - run: pnpm --filter @carebridge/api build
+      - name: Start compiled API and require health check
+        run: |
+          pnpm --filter @carebridge/api start > /tmp/carebridge-api.log 2>&1 &
           for i in {1..30}; do
-            curl -fsS http://127.0.0.1:4000/health && break
+            if curl -fsS http://127.0.0.1:4000/health; then exit 0; fi
             sleep 1
           done
+          cat /tmp/carebridge-api.log
+          exit 1
       - name: Run cross-role UAT
         env:
           API_URL: http://127.0.0.1:4000
-        run: pnpm --filter @carebridge/api uat:integration
+        run: |
+          pnpm --filter @carebridge/api uat:integration
+          pnpm --filter @carebridge/api uat:security
+      - name: Verify production-mode security with synthetic PostgreSQL
+        if: matrix.database == 'postgresql'
+        run: pnpm --filter @carebridge/api uat:production
       - name: Upload API log on failure
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: carebridge-api-uat-log
+          name: carebridge-api-${{ matrix.database }}-log
           path: /tmp/carebridge-api.log
+          retention-days: 7
 
-  qa-smoke:
-    needs: [foundation-check, uat-integration]
+  browser-check:
+    needs: foundation-check
     runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/qa' || github.base_ref == 'qa'
+    timeout-minutes: 15
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-      - name: QA environment guard
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.15.0
+          run_install: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @carebridge/patient exec playwright install --with-deps chromium
+      - run: pnpm test:e2e
+      - name: Upload browser traces on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: carebridge-browser-traces
+          path: apps/*/test-results/
+          retention-days: 7
+
+  container-check:
+    needs: foundation-check
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      max-parallel: 2
+      matrix:
+        app: [api, patient, doctor, admin]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build deployment image
+        env:
+          APP: ${{ matrix.app }}
         run: |
-          test -f .env.test.example
-          test -f docs/project/TESTING_ENVIRONMENT.md
-          test -f docs/testing/TEST-PLAN.md
-          echo "QA configuration files present; real patient data is prohibited."
+          if [ "$APP" = api ]; then
+            docker build -f infrastructure/Dockerfile.api -t carebridge-check .
+            docker build --target migrations -f infrastructure/Dockerfile.api -t carebridge-migrations-check .
+            docker run --rm --network none --entrypoint pnpm carebridge-migrations-check --filter @carebridge/database exec prisma --version
+          else
+            docker build -f infrastructure/Dockerfile.web -t carebridge-check \
+              --build-arg APP="$APP" \
+              --build-arg NEXT_PUBLIC_API_URL="$NEXT_PUBLIC_API_URL" \
+              --build-arg NEXT_PUBLIC_DOCTOR_APP_URL="$NEXT_PUBLIC_DOCTOR_APP_URL" \
+              --build-arg NEXT_PUBLIC_ADMIN_APP_URL="$NEXT_PUBLIC_ADMIN_APP_URL" .
+          fi
+      - name: Verify production process starts
+        env:
+          APP: ${{ matrix.app }}
+        run: |
+          if [ "$APP" = api ]; then
+            docker run -d --name carebridge-check -p 127.0.0.1:4800:4000 \
+              -e DATABASE_URL=postgresql://synthetic:synthetic@127.0.0.1:5432/synthetic \
+              -e CORS_ORIGIN=https://patient.carebridge.test \
+              -e ALLOW_DEMO_AUTH=false carebridge-check
+            probe=http://127.0.0.1:4800/health
+          else
+            docker run -d --name carebridge-check -p 127.0.0.1:4800:3000 carebridge-check
+            probe=http://127.0.0.1:4800/
+          fi
+          for i in {1..30}; do
+            if curl -fsS "$probe" > /dev/null; then exit 0; fi
+            sleep 1
+          done
+          docker logs carebridge-check
+          exit 1
+      - name: Remove test container
+        if: always()
+        run: docker rm -f carebridge-check || true

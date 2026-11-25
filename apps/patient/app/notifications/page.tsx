@@ -1,9 +1,9 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import Link from "next/link";
+import { useCallback, useEffect, useState } from "react";
+import { ApiError, API_URL, apiFetch } from "../../lib/api";
 import styles from "./notifications.module.css";
-
-const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
 
 type Notification = {
   id: string;
@@ -18,64 +18,47 @@ export default function NotificationsPage() {
   const [items, setItems] = useState<Notification[]>([]);
   const [unread, setUnread] = useState(0);
   const [error, setError] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [pending, setPending] = useState<string | null>(null);
+  const [signInRequired, setSignInRequired] = useState(false);
 
-  async function load() {
-    const response = await fetch(`${API_URL}/v1/notifications?limit=100`, {
-      credentials: "include",
-    });
-    if (!response.ok) {
-      setError("Sign in to view your notifications.");
-      return;
-    }
-    const data = await response.json();
-    setItems(data.notifications);
-    setUnread(data.unreadCount);
-  }
-
-  useEffect(() => {
-    let active = true;
-    const refresh = () => {
-      fetch(`${API_URL}/v1/notifications?limit=100`, { credentials: "include" })
-        .then(async (response) => {
-          if (!response.ok) throw new Error("notifications unavailable");
-          return response.json();
-        })
-        .then((data) => {
-          if (!active) return;
-          setItems(data.notifications);
-          setUnread(data.unreadCount);
-          setError("");
-        })
-        .catch(() => {
-          if (active) setError("Sign in to view your notifications.");
-        });
-    };
-    refresh();
-    const stream = new EventSource(`${API_URL}/v1/notifications/stream`, { withCredentials: true });
-    stream.addEventListener("notification", refresh);
-    stream.onerror = () => {
-      // The persisted notification list remains available if the live stream disconnects.
-    };
-    return () => {
-      active = false;
-      stream.close();
-    };
+  const load = useCallback(async (signal?: AbortSignal) => {
+    try {
+      const data = await apiFetch<{ notifications: Notification[]; unreadCount: number }>("/v1/notifications?limit=100", { signal });
+      if (signal?.aborted) return false;
+      setItems(data.notifications); setUnread(data.unreadCount); setError(""); setSignInRequired(false);
+      return true;
+    } catch (cause) {
+      if (!signal?.aborted) { setError(cause instanceof Error ? cause.message : "Unable to load notifications."); setSignInRequired(cause instanceof ApiError && cause.status === 401); }
+      return false;
+    } finally { if (!signal?.aborted) setLoading(false); }
   }, []);
 
-  async function mark(id: string) {
-    await fetch(`${API_URL}/v1/notifications/${id}/read`, {
-      method: "POST",
-      credentials: "include",
+  useEffect(() => {
+    const controller = new AbortController();
+    let stream: EventSource | null = null;
+    // State updates in load occur after the network request settles.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    void load(controller.signal).then((ok) => {
+      if (!ok || controller.signal.aborted) return;
+      stream = new EventSource(`${API_URL}/v1/notifications/stream`, { withCredentials: true });
+      stream.addEventListener("notification", () => void load(controller.signal));
     });
-    await load();
+    return () => { controller.abort(); stream?.close(); };
+  }, [load]);
+
+  async function mark(id: string) {
+    setPending(id);
+    try { await apiFetch(`/v1/notifications/${encodeURIComponent(id)}/read`, { method: "POST" }); await load(); }
+    catch (cause) { setError(cause instanceof Error ? cause.message : "Unable to mark this notification as read."); }
+    finally { setPending(null); }
   }
 
   async function markAll() {
-    await fetch(`${API_URL}/v1/notifications/read-all`, {
-      method: "POST",
-      credentials: "include",
-    });
-    await load();
+    setPending("all");
+    try { await apiFetch("/v1/notifications/read-all", { method: "POST" }); await load(); }
+    catch (cause) { setError(cause instanceof Error ? cause.message : "Unable to mark notifications as read."); }
+    finally { setPending(null); }
   }
 
   return (
@@ -96,7 +79,7 @@ export default function NotificationsPage() {
             <button
               className={styles.actionBtn}
               onClick={markAll}
-              disabled={!unread}
+              disabled={!unread || pending !== null || loading}
             >
               Mark all read
             </button>
@@ -106,11 +89,10 @@ export default function NotificationsPage() {
           </div>
         </header>
 
-        {error ? (
-          <div className={styles.empty}>{error}</div>
-        ) : (
+        {error && <div className={styles.empty} role="alert">{error} {signInRequired ? <Link href="/login">Sign in</Link> : <button className={styles.actionBtn} onClick={() => void load()}>Try again</button>}</div>}
+        {loading ? <p className={styles.empty} role="status">Loading notifications…</p> : (
           <section className={styles.list}>
-            {items.length === 0 ? (
+            {items.length === 0 && !error ? (
               <div className={styles.empty}>You&apos;re all caught up.</div>
             ) : (
               items.map((item) => {
@@ -136,6 +118,7 @@ export default function NotificationsPage() {
                     {isUnread && (
                       <button
                         className={styles.read}
+                        disabled={pending !== null}
                         onClick={() => mark(item.id)}
                       >
                         Read

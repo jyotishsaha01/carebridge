@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { getCurrentUser } from "../../lib/api";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   getAppointments,
   getCredentials,
@@ -23,9 +23,14 @@ export default function Operations() {
   const [credentials, setCredentials] = useState<AdminCredential[]>([]);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState("");
+  const selectedDoctorId = useRef("");
+  const [credentialsLoading, setCredentialsLoading] = useState(false);
 
-  async function load() {const session=await getCurrentUser();if(session.user.role!=="ADMIN")throw new Error("Administrator access required.");
+  async function load() {
     try {
+      setError("");
+      const session=await getCurrentUser();
+      if(session.user.role!=="ADMIN")throw new Error("Administrator access required.");
       const [d, p, a] = await Promise.all([getDoctors(), getPatients(), getAppointments()]);
       setDoctors(d);
       setPatients(p);
@@ -41,19 +46,21 @@ export default function Operations() {
   }, []);
 
   async function selectDoctor(doctor: AdminDoctor) {
-    setSelected(doctor);
+    selectedDoctorId.current = doctor.id;
+    setSelected(doctor); setCredentials([]); setCredentialsLoading(true); setError("");
     try {
-      setCredentials(await getCredentials(doctor.id));
+      const rows = await getCredentials(doctor.id);
+      if (selectedDoctorId.current === doctor.id) setCredentials(rows);
     } catch {
-      setError("Unable to load credentials.");
-    }
+      if (selectedDoctorId.current === doctor.id) setError("Unable to load credentials.");
+    } finally { if (selectedDoctorId.current === doctor.id) setCredentialsLoading(false); }
   }
 
   async function review(id: string, status: "APPROVED" | "REJECTED") {
     setBusy(id);
     try {
       await reviewCredential(id, status);
-      if (selected) setCredentials(await getCredentials(selected.id));
+      if (selected) { const rows = await getCredentials(selected.id); if (selectedDoctorId.current === selected.id) setCredentials(rows); }
     } catch (e) {
       setError(e instanceof Error ? e.message : "Credential review failed.");
     } finally {
@@ -72,13 +79,13 @@ export default function Operations() {
         <p style={{ fontSize: 12, fontWeight: 800, letterSpacing: ".12em", color: "#64748b", marginTop: 28 }}>CAREBRIDGE · ADMIN CONTROL</p>
         <h1>Operational management</h1>
         <p style={{ color: "#64748b" }}>Review providers, inspect patients and monitor appointment activity.</p>
-        {error && <div style={{ padding: 14, background: "#fff7ed", borderRadius: 12 }}>{error}</div>}
+        {error && <div role="alert" style={{ padding: 14, background: "#fff7ed", borderRadius: 12 }}>{error}</div>}
 
-        <div style={{ display: "grid", gridTemplateColumns: "1.1fr .9fr", gap: 20, marginTop: 26 }}>
+        <div className="workspace-columns" style={{ marginTop: 26 }}>
           <section style={{ background: "white", border: "1px solid #e2e8f0", borderRadius: 22, padding: 22 }}>
             <h2>Provider credentials</h2>
             {doctors.map((doctor) => (
-              <button key={doctor.id} onClick={() => void selectDoctor(doctor)} style={{ display: "block", width: "100%", textAlign: "left", padding: 14, border: 0, borderTop: "1px solid #eef2f7", background: selected?.id === doctor.id ? "#f0f7fc" : "white" }}>
+              <button key={doctor.id} disabled={Boolean(busy)} onClick={() => void selectDoctor(doctor)} style={{ display: "block", width: "100%", textAlign: "left", padding: 14, border: 0, borderTop: "1px solid #eef2f7", background: selected?.id === doctor.id ? "#f0f7fc" : "white" }}>
                 <b>{doctor.name}</b>
                 <div style={{ color: "#718096" }}>{doctor.specialty.name} · {doctor.isVerified ? "Verified" : "Pending"} · {doctor.location}</div>
               </button>
@@ -86,7 +93,7 @@ export default function Operations() {
             {selected && (
               <div style={{ marginTop: 18, padding: 18, borderRadius: 16, background: "#f8fafc" }}>
                 <h3>{selected.name} credentials</h3>
-                {credentials.length === 0 ? <p>No credentials.</p> : credentials.map((credential) => (
+                {credentialsLoading ? <p role="status">Loading credentials…</p> : credentials.length === 0 ? <p>No credentials.</p> : credentials.map((credential) => (
                   <div key={credential.id} style={{ padding: "12px 0", borderTop: "1px solid #e2e8f0" }}>
                     <b>{credential.type}</b>
                     <div style={{ fontSize: 13, color: "#64748b" }}>{credential.licenseNumber} · {credential.jurisdiction} · {credential.status}</div>
@@ -118,7 +125,7 @@ export default function Operations() {
           <h2>Appointment operations</h2>
           <div style={{ display: "grid", gap: 8 }}>
             {appointments.slice(0, 20).map((appointment) => (
-              <div key={appointment.id} style={{ display: "grid", gridTemplateColumns: "1.2fr 1.2fr 1fr 1fr", gap: 12, padding: 13, borderTop: "1px solid #eef2f7" }}>
+              <div key={appointment.id} style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(150px,1fr))", gap: 12, padding: 13, borderTop: "1px solid #eef2f7" }}>
                 <span>{patientName(appointment.patient)} · {appointment.patient.country}</span>
                 <span>{appointment.doctor.name} · {appointment.doctor.specialty.name}</span>
                 <span>{new Date(appointment.scheduledAt).toLocaleString()}</span>

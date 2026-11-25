@@ -1,5 +1,9 @@
 # CareBridge Progress Tracker
 
+## 25 November 2026 hardening update
+
+The latest security pass verifies 173 unit/regression tests, 32 browser tests, all production builds, dual-database integration journeys, and dependency checks. PostgreSQL migrations, container definitions, migration jobs, and expanded CI are prepared; container execution, provider integrations and operational launch requirements remain open. See the [25 November security review](../security/phase12-security-compliance.md#security-review--25-november-2026) and the [deployment runbook](../deployment/phase13-production-runbook.md).
+
 ## Release status
 
 | Milestone | Status | Notes |

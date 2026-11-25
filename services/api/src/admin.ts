@@ -39,10 +39,15 @@ export async function registerAdminRoutes(app: FastifyInstance) {
     if (!user) return;
     const { doctorId } = z.object({ doctorId: z.string().min(1) }).parse(request.params);
     const { verified } = z.object({ verified: z.boolean() }).parse(request.body);
-    const doctor = await prisma.doctor.update({ where: { id: doctorId }, data: { isVerified: verified, status: verified ? "VERIFIED" : "PENDING" }, select: { id: true, isVerified: true, status: true } });
-    const doctorUser = await prisma.user.findFirst({ where: { doctor: { id: doctorId } }, select: { id: true } });
-    if (doctorUser) await createNotification({ userId: doctorUser.id, role: "DOCTOR", type: "SYSTEM", title: verified ? "Doctor profile verified" : "Doctor verification changed", body: verified ? "Your CareBridge provider profile has been verified and is active." : "Your CareBridge provider verification status has changed. Review your profile for details." });
-    await recordAudit(request, { actorUserId: user.id, action: "ADMIN_DOCTOR_VERIFICATION", resourceType: "Doctor", resourceId: doctorId, outcome: "SUCCESS", metadata: { verified } });
+    const doctor = await prisma.$transaction(async (tx) => {
+      const updated = await tx.doctor.update({ where: { id: doctorId }, data: { isVerified: verified, isActive: verified, status: verified ? "VERIFIED" : "PENDING" }, select: { id: true, isVerified: true, isActive: true, status: true } });
+      await recordAudit(request, { actorUserId: user.id, action: "ADMIN_DOCTOR_VERIFICATION", resourceType: "Doctor", resourceId: doctorId, outcome: "SUCCESS", metadata: { verified } }, tx);
+      return updated;
+    });
+    try {
+      const doctorUser = await prisma.user.findFirst({ where: { doctor: { id: doctorId } }, select: { id: true } });
+      if (doctorUser) await createNotification({ userId: doctorUser.id, role: "DOCTOR", type: "SYSTEM", title: verified ? "Doctor profile verified" : "Doctor verification changed", body: verified ? "Your CareBridge provider profile has been verified and is active." : "Your CareBridge provider verification status has changed. Review your profile for details." });
+    } catch { request.log.warn({ resourceType: "Doctor" }, "Verification committed; notification delivery failed"); }
     return doctor;
   });
 
@@ -58,8 +63,11 @@ export async function registerAdminRoutes(app: FastifyInstance) {
     if (!user) return;
     const { credentialId } = z.object({ credentialId: z.string().min(1) }).parse(request.params);
     const input = z.object({ status: z.enum(["PENDING", "APPROVED", "REJECTED"]) }).parse(request.body);
-    const credential = await prisma.doctorCredential.update({ where: { id: credentialId }, data: { status: input.status, reviewedAt: new Date(), reviewedByUserId: user.id } });
-    await recordAudit(request, { actorUserId: user.id, action: "ADMIN_CREDENTIAL_REVIEWED", resourceType: "DoctorCredential", resourceId: credential.id, outcome: "SUCCESS", metadata: { status: input.status } });
+    const credential = await prisma.$transaction(async (tx) => {
+      const updated = await tx.doctorCredential.update({ where: { id: credentialId }, data: { status: input.status, reviewedAt: new Date(), reviewedByUserId: user.id } });
+      await recordAudit(request, { actorUserId: user.id, action: "ADMIN_CREDENTIAL_REVIEWED", resourceType: "DoctorCredential", resourceId: updated.id, outcome: "SUCCESS", metadata: { status: input.status } }, tx);
+      return updated;
+    });
     return credential;
   });
 

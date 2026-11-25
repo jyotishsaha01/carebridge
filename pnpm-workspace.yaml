@@ -3,3 +3,11 @@ packages:
   - services/*
   - packages/*
   - database
+
+# Security fixes for transitive dependencies of the pinned Prisma/Fastify toolchain.
+overrides:
+  effect@<3.22.1: 3.22.1
+  deepmerge-ts@<8.0.0: 8.0.0
+  fast-uri@>=3.0.0 <3.1.9: 3.1.9
+  fast-uri@>=4.0.0 <4.2.3: 4.2.3
+  minimatch@>=10.0.0 <11.0.1: 11.0.1

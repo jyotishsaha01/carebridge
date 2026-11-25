@@ -3,11 +3,16 @@
   "private": true,
   "version": "0.4.0",
   "scripts": {
-    "db:generate": "prisma generate",
-    "db:migrate": "prisma migrate dev",
-    "db:push": "prisma db push",
+    "db:generate": "node ../scripts/database.mjs generate",
+    "db:push": "node ../scripts/database.mjs push",
+    "db:setup": "node ../scripts/database.mjs setup",
+    "db:reset": "node ../scripts/database.mjs reset",
     "db:seed": "tsx prisma/seed.ts",
-    "typecheck": "tsc --noEmit"
+    "db:generate:production": "node ../scripts/database.mjs generate:production",
+    "db:deploy:production": "node ../scripts/database.mjs deploy:production",
+    "db:status:production": "node ../scripts/database.mjs status:production",
+    "typecheck": "tsc --noEmit",
+    "db:drift:production": "node ../scripts/database.mjs drift:production"
   },
   "dependencies": {
     "@prisma/client": "6.19.0"
@@ -17,8 +22,5 @@
     "prisma": "6.19.0",
     "tsx": "latest",
     "typescript": "5.9.2"
-  },
-  "prisma": {
-    "seed": "tsx prisma/seed.ts"
   }
 }

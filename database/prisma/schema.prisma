@@ -4,7 +4,7 @@ generator client {
 
 datasource db {
   provider = "sqlite"
-  url      = "file:./dev.db"
+  url      = env("DATABASE_URL")
 }
 
 
@@ -117,6 +117,7 @@ model Patient {
   consultations Consultation[]
   carePlans CarePlan[]
   careRequests CareRequest[]
+  paymentIntents PaymentIntent[]
 }
 
 model Specialty {
@@ -191,8 +192,39 @@ model Appointment {
   medicalIntake MedicalIntake?
   documents MedicalDocument[]
   consultation Consultation?
+  paymentIntent PaymentIntent?
   @@unique([doctorId, scheduledAt])
   @@index([patientId, scheduledAt])
+}
+
+model PaymentIntent {
+  id                String   @id
+  appointmentId     String   @unique
+  patientId         String
+  amountMinor       Int
+  currency          String
+  status            String
+  provider          String
+  providerPaymentId String?
+  idempotencyKey    String   @unique
+  checkoutUrl       String?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @default(now())
+  appointment Appointment @relation(fields: [appointmentId], references: [id], onDelete: Cascade)
+  patient Patient @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  @@index([patientId, createdAt])
+  @@index([status, updatedAt])
+}
+
+model PaymentWebhookEvent {
+  id         String   @id
+  eventId    String   @unique
+  paymentId  String
+  type       String
+  status     String
+  occurredAt DateTime
+  createdAt  DateTime @default(now())
+  @@index([paymentId, createdAt])
 }
 
 model MedicalIntake {

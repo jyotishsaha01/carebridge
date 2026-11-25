@@ -2,11 +2,11 @@
 import Link from "next/link";
 import {useParams} from "next/navigation";
 import {useEffect,useState} from "react";
-const API=process.env.NEXT_PUBLIC_API_URL??"http://localhost:4000";
+import {apiFetch} from "../../../lib/api";
 type Appointment={id:string;scheduledAt:string;durationMin:number;status:string;doctor:{name:string;slug:string;specialty:{name:string}};medicalIntake?:any;consultation?:any};
 export default function AppointmentPage(){
- const{id}=useParams<{id:string}>();const[data,setData]=useState<Appointment|null>(null);const[error,setError]=useState("");const[busy,setBusy]=useState(false);
- useEffect(()=>{if(!id)return;fetch(`${API}/v1/patient/appointments/${encodeURIComponent(id)}`,{credentials:"include"}).then(async r=>{if(!r.ok)throw new Error();return r.json()}).then(setData).catch(()=>setError("Sign in or check the appointment link."));
+ const{id}=useParams<{id:string}>();const[data,setData]=useState<Appointment|null>(null);const[error,setError]=useState("");
+ useEffect(()=>{if(!id)return;apiFetch<Appointment>(`/v1/patient/appointments/${encodeURIComponent(id)}`).then(setData).catch(()=>setError("Sign in or check the appointment link."));
  },[id]);
  if(error)return <main style={{maxWidth:850,margin:"auto",padding:48,fontFamily:"system-ui"}}><p>{error}</p><Link href="/dashboard">← Dashboard</Link></main>;
  if(!data)return <main style={{maxWidth:850,margin:"auto",padding:48,fontFamily:"system-ui"}}>Loading appointment…</main>;

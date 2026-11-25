@@ -9,12 +9,12 @@ export async function recordAudit(request: FastifyRequest, input: {
   resourceId?: string | null;
   outcome: "SUCCESS" | "FAILURE";
   metadata?: Record<string, unknown>;
-}) {
-  const forwarded = request.headers["x-forwarded-for"];
-  const ipAddress = typeof forwarded === "string" ? forwarded.split(",")[0]?.trim() : request.ip;
+}, database: Pick<Prisma.TransactionClient, "auditLog"> = prisma) {
+  // request.ip respects Fastify's trusted proxy configuration; raw forwarding headers are spoofable.
+  const ipAddress = request.ip;
   const userAgent = typeof request.headers["user-agent"] === "string" ? request.headers["user-agent"] : undefined;
 
-  return prisma.auditLog.create({
+  return database.auditLog.create({
     data: {
       actorUserId: input.actorUserId ?? null,
       action: input.action,
