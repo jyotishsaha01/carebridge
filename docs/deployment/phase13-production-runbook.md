@@ -4,7 +4,7 @@
 
 Deployment artifacts and automated checks do not yet authorize a real-patient launch. The API readiness endpoint deliberately reports unavailable email delivery, MFA, encrypted object storage, payments, and video integrations as false. Setting environment flags cannot turn these placeholders into working providers. The UI must describe unavailable services accurately.
 
-No hosting/provider accounts have been selected. Use this runbook to prepare a synthetic-data staging environment and finish the integrations below before enabling patient traffic.
+No hosting/provider accounts have been selected. An S3-compatible storage adapter and external malware-scanner boundary are included, but their real infrastructure and operational behavior remain unverified. The encrypted-storage release gate therefore stays false. Use this runbook to prepare a synthetic-data staging environment and finish the integrations below before enabling patient traffic.
 
 ## Topology and configuration
 
@@ -68,10 +68,12 @@ docker build -f infrastructure/Dockerfile.web -t carebridge-patient:RELEASE \
   --build-arg NEXT_PUBLIC_ADMIN_APP_URL=https://admin.example.com .
 
 docker build -f infrastructure/Dockerfile.web -t carebridge-doctor:RELEASE \
-  --build-arg APP=doctor --build-arg NEXT_PUBLIC_API_URL=https://api.example.com .
+  --build-arg APP=doctor --build-arg NEXT_PUBLIC_API_URL=https://api.example.com \
+  --build-arg NEXT_PUBLIC_PATIENT_APP_URL=https://app.example.com .
 
 docker build -f infrastructure/Dockerfile.web -t carebridge-admin:RELEASE \
-  --build-arg APP=admin --build-arg NEXT_PUBLIC_API_URL=https://api.example.com .
+  --build-arg APP=admin --build-arg NEXT_PUBLIC_API_URL=https://api.example.com \
+  --build-arg NEXT_PUBLIC_PATIENT_APP_URL=https://app.example.com .
 ```
 
 API listens on port 4000 and web images on port 3000. Both accept a hosting platform's `PORT` override. Supply `NODE_ENV=production`, `DATABASE_URL`, `CORS_ORIGIN`, and `ALLOW_DEMO_AUTH=false` to the API at runtime. Keep health/readiness paths accessible to the orchestrator. Use immutable image tags/digests and scan images in the hosting pipeline.
@@ -96,7 +98,7 @@ The API runtime contains compiled code, production dependencies, and the generat
 | Identity/MFA | Implement the chosen MFA/identity policy, enrollment/recovery and privileged-access controls. An environment flag is insufficient. |
 | Clinical consent/corrections | Implement and approve the formal consent-withdrawal and audit-preserving clinical-correction workflows. The application hides unsubmitted intake, requires submitted consultation consent, and prevents destructive rewrites once care begins; the current correction response directs users to their care team. |
 | Initial access | Design and verify an audited operator-controlled first-admin and doctor provisioning workflow. A fresh migration creates no accounts; production demo seeding and registration are disabled. |
-| Medical documents | Implement private encrypted storage, signed authorization-bound access, malware scanning, lifecycle retention/deletion, and failure recovery. Local plaintext storage is blocked in production. |
+| Medical documents | Provision and validate the included S3-compatible storage and external scanner adapters: private bucket/IAM, encryption, authorization-bound access, malware verdicts, retention/deletion and failure recovery. Configure the `STORAGE_*` and `MALWARE_SCANNER_*` values in `.env.production.example` through the secret manager. The API returns 503 for unconfigured production storage; explicit S3 selection requires complete validated settings. Local plaintext storage is blocked in production. |
 | Payments | Implement a real provider, raw-body signature verification as required by that provider, sandbox end-to-end validation, reconciliation, refunds, and monitoring. The demo provider is blocked in production. |
 | Video | Provision a provider and implement short-lived participant authorization and session lifecycle. Placeholder join links must stay unavailable. |
 | Observability | Connect metrics, redacted error tracking, alerts, dashboards, and on-call ownership. |

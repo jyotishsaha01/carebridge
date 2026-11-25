@@ -13,6 +13,8 @@ export type ApiDoctor = {
   expertise: string[];
   bio: string;
   verified: boolean;
+  listedAt?: string | null;
+  isNew?: boolean;
 };
 
 export type ApiSlot = {
@@ -86,12 +88,14 @@ export async function apiFetch<T>(path: string, init: ApiRequestInit = {}): Prom
 }
 
 export function getSpecialties() { return apiFetch<Array<{ id: string; name: string }>>("/v1/specialties"); }
-export function getDoctors(params: { specialty?: string; q?: string } = {}) {
+export function getDoctors(params: { specialty?: string; q?: string; limit?: number } = {}) {
   const search = new URLSearchParams();
   if (params.specialty && params.specialty !== "All specialties") search.set("specialty", params.specialty);
-  if (params.q) search.set("q", params.q);
-  const suffix = search.toString() ? `?${search.toString()}` : "";
-  return apiFetch<ApiDoctor[]>(`/v1/doctors${suffix}`);
+  if (params.q?.trim()) search.set("q", params.q.trim());
+  const requested = params.limit;
+  const limit = typeof requested === "number" && Number.isFinite(requested) ? Math.trunc(requested) : 50;
+  search.set("limit", String(Math.min(50, Math.max(1, limit))));
+  return apiFetch<ApiDoctor[]>(`/v1/doctors?${search.toString()}`);
 }
 export function getDoctor(slug: string) {
   return apiFetch<ApiDoctor & { costComparison: { patientCountry: string; comparableLowUsd: number; comparableHighUsd: number; sourceLabel: string; disclaimer: string } | null }>(`/v1/doctors/${encodeURIComponent(slug)}`);
@@ -106,7 +110,7 @@ export async function bookAppointment(doctorSlug: string, scheduledAt: string) {
   return apiFetch<{ id: string; scheduledAt: string; durationMin: number; status: string }>("/v1/appointments", {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ doctorSlug, scheduledAt, durationMin: 30 }),
+    body: JSON.stringify({ doctorSlug, scheduledAt }),
     sessionScope: scope,
   });
 }

@@ -74,7 +74,7 @@ export function registerSecurity(app: FastifyInstance, allowedOrigins: string[])
   app.setErrorHandler((error, request, reply) => {
     if (error instanceof AccountChangedError) return reply.code(409).send(ACCOUNT_CHANGED_RESPONSE);
     if (error instanceof ZodError) {
-      return reply.code(400).send({ error: "Invalid request", issues: error.issues.map((issue) => ({ path: issue.path.join("."), message: issue.message })) });
+      return reply.code(400).send({ error: "Invalid request", issues: error.issues.map((issue) => ({ path: issue.path.join("."), field: issue.path.join("."), message: issue.message })) });
     }
     const code = (error as { code?: string }).code;
     if (code === "P2002") return reply.code(409).send({ error: "This resource already exists" });

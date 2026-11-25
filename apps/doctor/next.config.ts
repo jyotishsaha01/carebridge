@@ -10,6 +10,11 @@ if (production) {
     throw new Error("NEXT_PUBLIC_API_URL must be a public HTTPS API URL without credentials, query, or fragment.");
   }
 }
+for (const value of [process.env.NEXT_PUBLIC_PATIENT_APP_URL, process.env.NEXT_PUBLIC_ADMIN_APP_URL]) {
+  if (!value) continue;
+  const url = new URL(value);
+  if (url.username || url.password || url.search || url.hash || url.pathname !== "/" || (production ? url.protocol !== "https:" || ["localhost", "127.0.0.1", "[::1]"].includes(url.hostname) : !["http:", "https:"].includes(url.protocol))) throw new Error("Workspace navigation URLs must be valid HTTP(S) origins and public HTTPS origins in production.");
+}
 const apiOrigin = new URL(apiUrl ?? "http://localhost:4000").origin;
 const csp = [
   "default-src 'self'",

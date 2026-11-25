@@ -8,10 +8,10 @@ const mocks = vi.hoisted(() => ({
   consultation: {} as any,
   notification: vi.fn(),
   db: {
-    doctor: { update: vi.fn() }, doctorCredential: { update: vi.fn() },
+    doctor: { update: vi.fn(), updateMany: vi.fn() }, doctorCredential: { update: vi.fn(), findMany: vi.fn(), findUnique: vi.fn(), findFirst: vi.fn() },
     user: { findFirst: vi.fn() }, patient: { findUnique: vi.fn() },
-    appointment: { findFirst: vi.fn(), findMany: vi.fn(), updateMany: vi.fn() }, consultation: { findFirst: vi.fn(), upsert: vi.fn() },
-    clinicalNote: { create: vi.fn() }, prescription: { upsert: vi.fn() }, prescriptionItem: { deleteMany: vi.fn() },
+    appointment: { findFirst: vi.fn(), findMany: vi.fn(), updateMany: vi.fn(), update: vi.fn() }, consultation: { findFirst: vi.fn(), upsert: vi.fn() },
+    clinicalNote: { create: vi.fn(), findFirst: vi.fn(), update: vi.fn() }, prescription: { upsert: vi.fn() }, prescriptionItem: { deleteMany: vi.fn() },
     followUp: { create: vi.fn() }, medicalIntake: { upsert: vi.fn() },
     auditLog: { create: vi.fn() }, $transaction: vi.fn(),
   },
@@ -22,6 +22,7 @@ vi.mock("./notificationsPrototype", () => ({ createNotification: mocks.notificat
 import { registerAdminRoutes } from "./admin";
 import { registerClinicalRoutes } from "./clinical";
 import { registerMedicalIntakeRoutes } from "./medicalIntake";
+import { registerDoctorOperationsRoutes } from "./doctorOperations";
 
 const apps: ReturnType<typeof Fastify>[] = [];
 async function app() {
@@ -39,6 +40,12 @@ beforeEach(() => {
   mocks.db.appointment.findFirst.mockImplementation(async ({ where }) => where.id === "appointment" && (where.doctorId === "doctor" || where.patientId === "patient") ? mocks.appointment : null);
   mocks.db.appointment.findMany.mockResolvedValue([]);
   mocks.db.appointment.updateMany.mockResolvedValue({ count: 1 });
+  mocks.db.appointment.update.mockResolvedValue({ id: "appointment" });
+  mocks.db.doctor.updateMany.mockResolvedValue({ count: 1 });
+  mocks.db.doctorCredential.findMany.mockResolvedValue([{ status: "APPROVED" }]);
+  mocks.db.doctorCredential.findUnique.mockResolvedValue({ doctorId: "doctor" });
+  mocks.db.doctorCredential.findFirst.mockResolvedValue({ id: "credential", doctorId: "doctor" });
+  mocks.db.clinicalNote.findFirst.mockResolvedValue(null);
   mocks.db.consultation.findFirst.mockImplementation(async ({ where }) => where.id === "consultation" && where.doctorId === "doctor" ? mocks.consultation : null);
   mocks.db.doctor.update.mockImplementation(async ({ data }) => { mocks.state.verified = data.isVerified; return { id: "doctor", ...data }; });
   mocks.db.doctorCredential.update.mockImplementation(async ({ data }) => { mocks.state.credential = data.status; return { id: "credential", ...data }; });
@@ -201,5 +208,39 @@ describe("atomic clinical and privilege-change audit", () => {
     expect(response.statusCode).toBe(200);
     expect(mocks.state.prescriptionItems).toEqual(["Synthetic medication"]);
     expect(mocks.db.auditLog.create).toHaveBeenCalledOnce();
+  });
+});
+
+
+describe("doctor credential state serialization", () => {
+  it("reads authoritative credential states after acquiring the shared doctor lock", async () => {
+    mocks.actor.role = "ADMIN";
+    // A submission commits while verification waits for this row lock.
+    mocks.db.doctor.updateMany.mockImplementation(async () => {
+      mocks.db.doctorCredential.findMany.mockResolvedValue([{ status: "APPROVED" }, { status: "PENDING" }]);
+      return { count: 1 };
+    });
+    const response = await (await app()).inject({ method: "POST", url: "/v1/admin/doctors/doctor/verification", payload: { verified: true } });
+    expect(response.statusCode).toBe(409);
+    expect(mocks.db.doctor.update).not.toHaveBeenCalled();
+    expect(mocks.state.verified).toBe(false);
+  });
+
+  it("refetches a reviewed credential under its locked doctor before modifying it", async () => {
+    mocks.actor.role = "ADMIN";
+    mocks.db.doctorCredential.findFirst.mockResolvedValue(null);
+    const response = await (await app()).inject({ method: "PATCH", url: "/v1/admin/credentials/credential", payload: { status: "APPROVED" } });
+    expect(response.statusCode).toBe(404);
+    expect(mocks.db.doctorCredential.findFirst).toHaveBeenCalledWith({ where: { id: "credential", doctorId: "doctor" } });
+    expect(mocks.db.doctorCredential.update).not.toHaveBeenCalled();
+  });
+
+  it("locks the same doctor before resubmission reads or credential mutations", async () => {
+    const instance = await app(); await registerDoctorOperationsRoutes(instance);
+    const response = await instance.inject({ method: "POST", url: "/v1/doctor/credentials", payload: { type: "LICENSE", licenseNumber: "SYNTHETIC-123", jurisdiction: "Test jurisdiction" } });
+    expect(response.statusCode).toBe(200);
+    expect(mocks.db.doctor.updateMany.mock.invocationCallOrder[0]).toBeLessThan(mocks.db.doctorCredential.findFirst.mock.invocationCallOrder[0]);
+    expect(mocks.state.verified).toBe(false);
+    expect(mocks.db.doctor.update).toHaveBeenCalledWith(expect.objectContaining({ data: { isVerified: false, isActive: false, status: "PENDING" } }));
   });
 });

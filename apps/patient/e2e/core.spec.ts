@@ -7,8 +7,8 @@ test.describe("Patient core navigation",()=>{
     await expect(page).toHaveURL(/\/login$/);
     await expect(page.getByRole("heading",{name:/welcome back/i})).toBeVisible();
     await page.goto("/compare");
-    await expect(page.getByRole("heading",{name:/see the difference before you choose/i})).toBeVisible();
-    await expect(page.getByText("Illustrative local benchmark", { exact: true })).toBeVisible();
+    await expect(page.getByRole("heading",{name:/compare costs with clear assumptions/i})).toBeVisible();
+    await expect(page.getByText("Estimate only, not verified savings.", { exact: true })).toBeVisible();
   });
   test("medical documents page exposes secure upload",async({page})=>{
     await page.goto("/documents");

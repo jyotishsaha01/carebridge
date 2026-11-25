@@ -25,6 +25,7 @@ model User {
   notifications           Notification[]
   notificationPreferences NotificationPreference[]
   supportTickets          SupportTicket[]
+  supportAttachments      SupportAttachment[]
   supportMessages         SupportMessage[] @relation("SupportMessageAuthor")
   reviewedCredentials     DoctorCredential[] @relation("CredentialReviewer")
 }
@@ -193,7 +194,7 @@ model Appointment {
   documents MedicalDocument[]
   consultation Consultation?
   paymentIntent PaymentIntent?
-  @@unique([doctorId, scheduledAt])
+  @@index([doctorId, scheduledAt])
   @@index([patientId, scheduledAt])
 }
 
@@ -400,18 +401,24 @@ model DoctorCredential {
 
 
 model SupportTicket {
-  id         String              @id @default(cuid())
-  userId     String
-  category   String
-  message    String
-  status     String @default("OPEN")
-  createdAt  DateTime            @default(now())
-  updatedAt  DateTime            @updatedAt
-  resolvedAt DateTime?
-  user       User                @relation(fields: [userId], references: [id], onDelete: Cascade)
-  messages   SupportMessage[]
+  id          String              @id @default(cuid())
+  userId      String
+  category    String
+  message     String
+  status      String              @default("OPEN")
+  priority    String              @default("NORMAL")
+  slaDueAt    DateTime?
+  escalatedAt DateTime?
+  createdAt   DateTime            @default(now())
+  updatedAt   DateTime            @updatedAt
+  resolvedAt  DateTime?
+  user        User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  messages    SupportMessage[]
+  attachments SupportAttachment[]
   @@index([userId, status, createdAt])
   @@index([status, updatedAt])
+  @@index([priority, slaDueAt])
+  @@index([escalatedAt, status])
 }
 
 
@@ -425,6 +432,22 @@ model NotificationPreference {
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
   @@unique([userId, type])
   @@index([userId, type])
+}
+
+
+model SupportAttachment {
+  id          String        @id @default(cuid())
+  ticketId    String
+  uploadedBy  String
+  fileName    String
+  contentType String
+  sizeBytes   Int
+  storageKey  String        @unique
+  createdAt   DateTime      @default(now())
+  ticket      SupportTicket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  uploader    User          @relation(fields: [uploadedBy], references: [id], onDelete: Cascade)
+  @@index([ticketId, createdAt])
+  @@index([uploadedBy, createdAt])
 }
 
 model SupportMessage {

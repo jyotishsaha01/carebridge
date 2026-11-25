@@ -14,6 +14,15 @@ type Notification = {
   createdAt: string;
 };
 
+function formatNotificationDate(value: string): string {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" }).format(date);
+}
+function formatNotificationBody(value: string): string {
+  return value.replace(/\b\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:?\d{2})?\b/g, (timestamp) => formatNotificationDate(timestamp));
+}
+
 export default function NotificationsPage() {
   const [items, setItems] = useState<Notification[]>([]);
   const [unread, setUnread] = useState(0);
@@ -26,7 +35,7 @@ export default function NotificationsPage() {
     try {
       const data = await apiFetch<{ notifications: Notification[]; unreadCount: number }>("/v1/notifications?limit=100", { signal });
       if (signal?.aborted) return false;
-      setItems(data.notifications); setUnread(data.unreadCount); setError(""); setSignInRequired(false);
+      setItems(Array.isArray(data.notifications) ? data.notifications : []); setUnread(Number.isFinite(data.unreadCount) ? data.unreadCount : 0); setError(""); setSignInRequired(false);
       return true;
     } catch (cause) {
       if (!signal?.aborted) { setError(cause instanceof Error ? cause.message : "Unable to load notifications."); setSignInRequired(cause instanceof ApiError && cause.status === 401); }
@@ -83,6 +92,7 @@ export default function NotificationsPage() {
             >
               Mark all read
             </button>
+            <button className={styles.actionBtn} onClick={() => void load()} disabled={loading || pending !== null}>Refresh</button>
             <a className={styles.actionLink} href="/dashboard">
               Dashboard
             </a>
@@ -91,7 +101,7 @@ export default function NotificationsPage() {
 
         {error && <div className={styles.empty} role="alert">{error} {signInRequired ? <Link href="/login">Sign in</Link> : <button className={styles.actionBtn} onClick={() => void load()}>Try again</button>}</div>}
         {loading ? <p className={styles.empty} role="status">Loading notifications…</p> : (
-          <section className={styles.list}>
+          <section className={styles.list} aria-label="Your notifications">
             {items.length === 0 && !error ? (
               <div className={styles.empty}>You&apos;re all caught up.</div>
             ) : (
@@ -110,10 +120,10 @@ export default function NotificationsPage() {
                     <div className={styles.body}>
                       <div className={styles.meta}>
                         {item.type} ·{" "}
-                        {new Date(item.createdAt).toLocaleString()}
+                        {formatNotificationDate(item.createdAt)}
                       </div>
                       <h2 className={styles.cardTitle}>{item.title}</h2>
-                      <p className={styles.cardBody}>{item.body}</p>
+                      <p className={styles.cardBody}>{formatNotificationBody(item.body)}</p>
                     </div>
                     {isUnread && (
                       <button
@@ -121,7 +131,7 @@ export default function NotificationsPage() {
                         disabled={pending !== null}
                         onClick={() => mark(item.id)}
                       >
-                        Read
+                        Mark read
                       </button>
                     )}
                   </article>

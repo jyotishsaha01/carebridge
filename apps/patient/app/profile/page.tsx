@@ -1,18 +1,176 @@
 "use client";
-import {useEffect,useState} from "react";
-import {apiFetch,getSessions,revokeSession} from "../../lib/api";
 
-export default function ProfilePage(){const[profile,setProfile]=useState<any>(null);const[sessions,setSessions]=useState<any[]>([]);const[prefs,setPrefs]=useState<Record<string,boolean>>({});const[first,setFirst]=useState("");const[last,setLast]=useState("");const[country,setCountry]=useState("US");const[phone,setPhone]=useState("");const[emergencyName,setEmergencyName]=useState("");const[emergencyPhone,setEmergencyPhone]=useState("");const[saved,setSaved]=useState(false);const[error,setError]=useState("");const[saving,setSaving]=useState(false);const[preferenceBusy,setPreferenceBusy]=useState(false);useEffect(()=>{void getSessions().then(x=>setSessions(x.sessions)).catch(()=>{});apiFetch<Array<{type:string;enabled:boolean}>>("/v1/prototype/notification-preferences").then(x=>{if(x) setPrefs(Object.fromEntries(x.map((item:any)=>[item.type,item.enabled])))}).catch(()=>{});apiFetch<any>("/v1/patient/profile").then(x=>{setProfile(x);setFirst(x.firstName??"");setLast(x.lastName??"");setCountry(x.country??"US");setPhone(x.phone??"");setEmergencyName(x.emergencyContactName??"");setEmergencyPhone(x.emergencyContactPhone??"")}).catch(()=>setError("Sign in to load your profile."));},[]);async function save(){
- if(saving||!profile)return;setSaving(true);setSaved(false);setError("");
- try {const result=await apiFetch("/v1/patient/profile",{method:"PATCH",headers:{"content-type":"application/json"},body:JSON.stringify({firstName:first.trim()||null,lastName:last.trim()||null,country,phone:phone.trim()||null,emergencyContactName:emergencyName.trim()||null,emergencyContactPhone:emergencyPhone.trim()||null})});setProfile(result);setSaved(true);}
- catch(cause){setError(cause instanceof Error?cause.message:"Unable to save your profile. Your changes are still here; please try again.");}
- finally{setSaving(false);}
+import { useEffect, useState } from "react";
+import { apiFetch, getSessions, revokeSession } from "../../lib/api";
+
+const notificationTypes = ["CONSULTATION", "PRESCRIPTION", "FOLLOW_UP", "CARE_PLAN", "DOCUMENT", "SUPPORT", "SYSTEM"];
+
+type Profile = {
+  firstName?: string | null;
+  lastName?: string | null;
+  country?: string | null;
+  phone?: string | null;
+  emergencyContactName?: string | null;
+  emergencyContactPhone?: string | null;
+  user?: { email?: string | null };
+};
+
+export default function ProfilePage() {
+  const [profile, setProfile] = useState<Profile | null>(null);
+  const [sessions, setSessions] = useState<Awaited<ReturnType<typeof getSessions>>["sessions"]>([]);
+  const [prefs, setPrefs] = useState<Record<string, boolean>>({});
+  const [first, setFirst] = useState("");
+  const [last, setLast] = useState("");
+  const [country, setCountry] = useState("US");
+  const [phone, setPhone] = useState("");
+  const [emergencyName, setEmergencyName] = useState("");
+  const [emergencyPhone, setEmergencyPhone] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const [error, setError] = useState("");
+  const [preferenceError, setPreferenceError] = useState("");
+  const [busyPreference, setBusyPreference] = useState("");
+
+  useEffect(() => {
+    let active = true;
+    const controller = new AbortController();
+    async function load() {
+      try {
+        const [sessionResult, data, preferences] = await Promise.all([
+          getSessions().catch(() => ({ sessions: [] })),
+          apiFetch<Profile>("/v1/patient/profile", { signal: controller.signal }),
+          apiFetch<Array<{ type: string; enabled: boolean }>>("/v1/prototype/notification-preferences", { signal: controller.signal }).catch(() => {
+            if (active) setPreferenceError("Notification preferences could not be loaded. Please retry before changing them.");
+            return [];
+          }),
+        ]);
+        if (!active) return;
+        setProfile(data);
+        setFirst(data.firstName ?? "");
+        setLast(data.lastName ?? "");
+        setCountry(data.country ?? "US");
+        setPhone(data.phone ?? "");
+        setEmergencyName(data.emergencyContactName ?? "");
+        setEmergencyPhone(data.emergencyContactPhone ?? "");
+        setSessions(sessionResult.sessions ?? []);
+        if (Array.isArray(preferences)) setPrefs(Object.fromEntries(preferences.map((item) => [item.type, item.enabled])));
+
+      } catch (cause) {
+        if (active) setError(cause instanceof Error ? cause.message : "Unable to load your profile.");
+      } finally {
+        if (active) setLoading(false);
+      }
+    }
+    void load();
+    return () => { active = false; controller.abort(); };
+  }, []);
+
+  async function save() {
+    if (saving || !profile) return;
+    setError("");
+    setSaved(false);
+    if (first.trim().length > 100 || last.trim().length > 100 || emergencyName.trim().length > 120) {
+      setError("First and last names must be 100 characters or fewer; emergency contact names must be 120 characters or fewer.");
+      return;
+    }
+    if (phone.length > 30 || emergencyPhone.length > 30) {
+      setError("Phone numbers must be 30 characters or fewer.");
+      return;
+    }
+    const phonePattern = /^[+0-9().\s-]*$/;
+    if ((phone.trim() && !phonePattern.test(phone.trim())) || (emergencyPhone.trim() && !phonePattern.test(emergencyPhone.trim()))) {
+      setError("Phone numbers can contain digits, spaces, +, parentheses, hyphens, and periods only.");
+      return;
+    }
+    if (Boolean(emergencyName.trim()) !== Boolean(emergencyPhone.trim())) {
+      setError("Enter both the emergency contact name and phone number, or leave both blank.");
+      return;
+    }
+    if (emergencyPhone.trim() && emergencyPhone.replace(/\D/g, "").length < 7) {
+      setError("Enter a valid emergency contact phone number with at least 7 digits.");
+      return;
+    }
+    setSaving(true);
+    try {
+      const savedProfile = await apiFetch<Profile>("/v1/patient/profile", {
+        method: "PATCH", headers: { "content-type": "application/json" },
+        body: JSON.stringify({ firstName: first.trim() || null, lastName: last.trim() || null, country, phone: phone.trim() || null, emergencyContactName: emergencyName.trim() || null, emergencyContactPhone: emergencyPhone.trim() || null }),
+      });
+      setProfile(savedProfile);
+      setSaved(true);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Unable to save your profile.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function updatePreference(type: string, enabled: boolean) {
+    const previous = prefs[type] !== false;
+    setBusyPreference(type);
+    setPreferenceError("");
+    setPrefs((current) => ({ ...current, [type]: enabled }));
+    try {
+      await apiFetch(`/v1/prototype/notification-preferences/${encodeURIComponent(type)}`, {
+        method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ enabled }),
+      });
+    } catch (cause) {
+      setPrefs((current) => ({ ...current, [type]: previous }));
+      setPreferenceError(cause instanceof Error ? cause.message : "Preference could not be saved.");
+    } finally {
+      setBusyPreference("");
+    }
+  }
+
+  if (loading) return <main style={{ minHeight: "100vh", padding: 44, fontFamily: "Inter,system-ui,sans-serif" }} role="status">Loading profile…</main>;
+
+  return (
+    <main style={{ minHeight: "100vh", background: "#f7fafc", padding: "44px 24px", fontFamily: "Inter,system-ui,sans-serif", color: "#172334" }}>
+      <div style={{ maxWidth: 900, margin: "auto" }}>
+        <p style={{ fontSize: 12, fontWeight: 800, letterSpacing: ".12em", color: "#64748b" }}>CAREBRIDGE · PROFILE</p>
+        <h1 style={{ fontSize: 40, margin: "8px 0" }}>Your profile & settings</h1>
+        <p style={{ color: "#64748b", fontSize: 17 }}>Manage your personal information, active sessions, and in-app notification preferences.</p>
+        {error && <div role="alert" style={{ marginTop: 18, padding: 13, borderRadius: 14, background: "#fff7ed", color: "#9a3412" }}>{error}</div>}
+        {saved && <div role="status" style={{ marginTop: 18, padding: 13, borderRadius: 14, background: "#ecfdf5", color: "#166534" }}>Changes saved.</div>}
+
+        <section style={{ marginTop: 26, background: "white", border: "1px solid #e2e8f0", borderRadius: 24, padding: 26 }}>
+          <h2>Personal information</h2>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(230px,1fr))", gap: 16 }}>
+            <label style={{ display: "grid", gap: 7, fontWeight: 700 }}>First name<input maxLength={100} disabled={!profile || saving} value={first} onChange={(event) => { setFirst(event.target.value); setSaved(false); }} autoComplete="given-name" style={{ padding: 13, border: "1px solid #cbd5e1", borderRadius: 12 }} /></label>
+            <label style={{ display: "grid", gap: 7, fontWeight: 700 }}>Last name<input maxLength={100} disabled={!profile || saving} value={last} onChange={(event) => { setLast(event.target.value); setSaved(false); }} autoComplete="family-name" style={{ padding: 13, border: "1px solid #cbd5e1", borderRadius: 12 }} /></label>
+            <label style={{ display: "grid", gap: 7, fontWeight: 700 }}>Email<input value={profile?.user?.email ?? ""} readOnly aria-readonly="true" style={{ padding: 13, border: "1px solid #cbd5e1", borderRadius: 12, background: "#f8fafc" }} /></label>
+            <label style={{ display: "grid", gap: 7, fontWeight: 700 }}>Country<select value={country} onChange={(event) => { setCountry(event.target.value); setSaved(false); }} style={{ padding: 13, border: "1px solid #cbd5e1", borderRadius: 12 }}><option value="US">United States</option><option value="IN">India</option><option value="GB">United Kingdom</option><option value="CA">Canada</option></select></label>
+            <label style={{ display: "grid", gap: 7, fontWeight: 700 }}>Phone<input type="tel" maxLength={30} value={phone} onChange={(event) => { setPhone(event.target.value); setSaved(false); }} autoComplete="tel" placeholder="+1 555 0100" style={{ padding: 13, border: "1px solid #cbd5e1", borderRadius: 12 }} /></label>
+            <label style={{ display: "grid", gap: 7, fontWeight: 700 }}>Emergency contact name<input maxLength={120} value={emergencyName} onChange={(event) => { setEmergencyName(event.target.value); setSaved(false); }} style={{ padding: 13, border: "1px solid #cbd5e1", borderRadius: 12 }} /></label>
+            <label style={{ display: "grid", gap: 7, fontWeight: 700 }}>Emergency contact phone<input type="tel" maxLength={30} value={emergencyPhone} onChange={(event) => { setEmergencyPhone(event.target.value); setSaved(false); }} style={{ padding: 13, border: "1px solid #cbd5e1", borderRadius: 12 }} /></label>
+          </div>
+        </section>
+
+        <section style={{ marginTop: 24, background: "white", border: "1px solid #e2e8f0", borderRadius: 24, padding: 26 }}>
+          <h2>Security & sessions</h2>
+          <p style={{ color: "#64748b" }}>Review active sessions and revoke sessions you no longer recognize.</p>
+          {sessions.length === 0 ? <p style={{ color: "#64748b" }}>No session details available.</p> : sessions.map((session) => (
+            <div key={session.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 16, padding: "14px 0", borderTop: "1px solid #eef2f7" }}>
+              <div><b>{session.current ? "Current session" : "CareBridge session"}</b><div style={{ fontSize: 13, color: "#64748b" }}>Last active {new Date(session.lastSeenAt).toLocaleString()}</div></div>
+              {!session.current && <button onClick={async () => { try { await revokeSession(session.id); setSessions((current) => current.filter((item) => item.id !== session.id)); } catch { setError("Unable to revoke that session. Please retry."); } }} style={{ padding: "8px 12px", borderRadius: 10, border: "1px solid #cbd5e1", background: "white" }}>Revoke</button>}
+            </div>
+          ))}
+        </section>
+
+        <section style={{ marginTop: 24, background: "white", border: "1px solid #e2e8f0", borderRadius: 24, padding: 26 }}>
+          <h2>Notification preferences</h2>
+          <p style={{ color: "#64748b" }}>Choose which in-app care updates you want to receive.</p>
+          {preferenceError && <p role="alert" style={{ color: "#b42318" }}>{preferenceError}</p>}
+          {notificationTypes.map((type) => (
+            <label key={type} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, padding: "12px 0", borderTop: "1px solid #eef2f7" }}>
+              <span>{type.replaceAll("_", " ")}</span>
+              <input type="checkbox" checked={prefs[type] !== false} disabled={busyPreference !== "" || !profile} onChange={(event) => void updatePreference(type, event.target.checked)} />
+            </label>
+          ))}
+        </section>
+        <button onClick={() => void save()} disabled={saving || loading || !profile} style={{ marginTop: 20, padding: "13px 20px", border: 0, borderRadius: 13, background: "#1672b8", color: "white", fontWeight: 800, opacity: saving ? 0.7 : 1 }}>{saving ? "Saving…" : "Save changes"}</button>
+      </div>
+    </main>
+  );
 }
-async function changePreference(type:string,enabled:boolean){
- setPreferenceBusy(true);setError("");
- try{await apiFetch(`/v1/prototype/notification-preferences/${encodeURIComponent(type)}`,{method:"PATCH",headers:{"content-type":"application/json"},body:JSON.stringify({enabled})});setPrefs(x=>({...x,[type]:enabled}));}
- catch(cause){setError(cause instanceof Error?cause.message:"Unable to save this preference. Please try again.");}
- finally{setPreferenceBusy(false);}
-}
-async function removeSession(id:string){try{await revokeSession(id);setSessions(items=>items.filter(x=>x.id!==id));}catch(cause){setError(cause instanceof Error?cause.message:"Unable to revoke this session. Please try again.");}}
-return <main style={{minHeight:"100vh",background:"#f7fafc",padding:"44px 24px",fontFamily:"Inter,system-ui,sans-serif",color:"#172334"}}><div style={{maxWidth:900,margin:"auto"}}><p style={{fontSize:12,fontWeight:800,letterSpacing:".12em",color:"#64748b"}}>CAREBRIDGE · PROFILE</p><h1 style={{fontSize:40,margin:"8px 0"}}>Your profile & settings</h1><p style={{color:"#64748b",fontSize:17}}>Manage your personal information, account sessions, and care updates.</p>{error&&<div role="alert" style={{marginTop:18,padding:13,borderRadius:14,background:"#fff7ed"}}>{error}</div>}{saved&&<div role="status" style={{marginTop:18,padding:13,borderRadius:14,background:"#ecfdf5",color:"#166534"}}>Changes saved.</div>}<section style={{marginTop:26,background:"white",border:"1px solid #e2e8f0",borderRadius:24,padding:26}}><h2>Personal information</h2><div className="responsive-two-column" style={{display:"grid",gap:16}}>{[{label:"First name",value:first,setter:setFirst},{label:"Last name",value:last,setter:setLast}].map(({label,value,setter})=><label key={label} style={{display:"grid",gap:7,fontWeight:700}}>{label}<input maxLength={100} value={value} onChange={e=>setter(e.target.value)} style={{padding:13,border:"1px solid #cbd5e1",borderRadius:12}}/></label>)}<label style={{display:"grid",gap:7,fontWeight:700}}>Email<input value={profile?.user?.email??""} readOnly style={{padding:13,border:"1px solid #cbd5e1",borderRadius:12,background:"#f8fafc"}}/></label><label style={{display:"grid",gap:7,fontWeight:700}}>Country<select value={country} onChange={e=>setCountry(e.target.value)} style={{padding:13,border:"1px solid #cbd5e1",borderRadius:12}}><option value="US">United States</option><option value="IN">India</option><option value="GB">United Kingdom</option><option value="CA">Canada</option></select></label><label style={{display:"grid",gap:7,fontWeight:700}}>Phone<input type="tel" maxLength={30} value={phone} onChange={e=>setPhone(e.target.value)} placeholder="+1 555 0100" style={{padding:13,border:"1px solid #cbd5e1",borderRadius:12}}/></label><label style={{display:"grid",gap:7,fontWeight:700}}>Emergency contact name<input maxLength={120} value={emergencyName} onChange={e=>setEmergencyName(e.target.value)} style={{padding:13,border:"1px solid #cbd5e1",borderRadius:12}}/></label><label style={{display:"grid",gap:7,fontWeight:700}}>Emergency contact phone<input type="tel" maxLength={30} value={emergencyPhone} onChange={e=>setEmergencyPhone(e.target.value)} style={{padding:13,border:"1px solid #cbd5e1",borderRadius:12}}/></label></div></section><section style={{marginTop:24,background:"white",border:"1px solid #e2e8f0",borderRadius:24,padding:26}}><h2>Security & sessions</h2><p style={{color:"#64748b"}}>Review active sessions and revoke sessions you no longer recognize.</p>{sessions.length===0?<p style={{color:"#64748b"}}>No session details available.</p>:sessions.map(s=><div key={s.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:16,padding:"14px 0",borderTop:"1px solid #eef2f7"}}><div><b>{s.current?"Current session":"CareBridge session"}</b><div style={{fontSize:13,color:"#64748b"}}>Last active {new Date(s.lastSeenAt).toLocaleString()}</div></div>{!s.current&&<button onClick={()=>void removeSession(s.id)} style={{padding:"8px 12px",borderRadius:10,border:"1px solid #cbd5e1",background:"white"}}>Revoke</button>}</div>)}</section><section style={{marginTop:24,background:"white",border:"1px solid #e2e8f0",borderRadius:24,padding:26}}><h2>Notification preferences</h2><p style={{color:"#64748b"}}>Choose which in-app care updates you want to receive.</p>{["CONSULTATION","PRESCRIPTION","FOLLOW_UP","CARE_PLAN","DOCUMENT","SUPPORT","SYSTEM"].map(type=><label key={type} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"12px 0",borderTop:"1px solid #eef2f7"}}><span>{type.replaceAll("_"," ")}</span><input type="checkbox" checked={prefs[type]!==false} disabled={preferenceBusy||!profile} onChange={e=>void changePreference(type,e.target.checked)}/></label>)}</section><button disabled={saving||!profile} onClick={()=>void save()} style={{marginTop:20,padding:"13px 20px",border:0,borderRadius:13,background:"#1672b8",color:"white",fontWeight:800}}>{saving?"Saving…":"Save changes"}</button></div></main>}

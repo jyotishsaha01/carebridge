@@ -7,8 +7,8 @@ import {
   unreadCount,
   markNotificationRead,
   markAllNotificationsRead,
-  seedNotificationPrototype,
-  type NotificationRole,
+  deleteNotification,
+  deleteReadNotifications,
   type NotificationType,
 } from "./notificationsPrototype";
 import { getAuthenticatedUser, requireRole } from "./auth";
@@ -28,8 +28,6 @@ export async function registerNotificationPrototypeRoutes(app: FastifyInstance) 
   const list = async (request: FastifyRequest, reply: FastifyReply) => {
     const user = await requireRole(request, reply, [...allowedRoles]);
     if (!user) return;
-    const role = user.role as NotificationRole;
-    if (process.env.NODE_ENV !== "production" && process.env.ALLOW_DEMO_AUTH === "true") await seedNotificationPrototype(user.id, role);
     return { notifications: await listNotifications(user.id), unreadCount: await unreadCount(user.id), source: "persistent" };
   };
 
@@ -120,6 +118,25 @@ export async function registerNotificationPrototypeRoutes(app: FastifyInstance) 
   };
   app.post("/v1/notifications/read-all", markAllRead);
   app.post("/v1/prototype/notifications/read-all", markAllRead);
+
+  const removeOne = async (request: FastifyRequest, reply: FastifyReply) => {
+    const user = await requireRole(request, reply, [...allowedRoles]);
+    if (!user) return;
+    const { id } = z.object({ id: z.string().min(1) }).parse(request.params);
+    const deleted = await deleteNotification(user.id, id);
+    if (!deleted) return reply.code(404).send({ error: "Notification not found" });
+    return reply.code(204).send();
+  };
+  app.delete("/v1/notifications/:id", removeOne);
+  app.delete("/v1/prototype/notifications/:id", removeOne);
+
+  const clearRead = async (request: FastifyRequest, reply: FastifyReply) => {
+    const user = await requireRole(request, reply, [...allowedRoles]);
+    if (!user) return;
+    return { deleted: await deleteReadNotifications(user.id) };
+  };
+  app.delete("/v1/notifications/read", clearRead);
+  app.delete("/v1/prototype/notifications/read", clearRead);
 
   const preferences = async (request: FastifyRequest, reply: FastifyReply) => {
     const user = await requireRole(request, reply, [...allowedRoles]);

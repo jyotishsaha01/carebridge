@@ -80,3 +80,13 @@ export async function seedNotificationPrototype(userId:string,role:NotificationR
   ];
   for(const [type,title,body] of samples) await createNotification({userId,role,type,title,body});
 }
+
+export async function deleteNotification(userId:string,id:string){
+  const result = await prisma.notification.deleteMany({where:{id,userId}});
+  return result.count > 0;
+}
+
+export async function deleteReadNotifications(userId:string){
+  const result = await prisma.notification.deleteMany({where:{userId,status:"READ"}});
+  return result.count;
+}

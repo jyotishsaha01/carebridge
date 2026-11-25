@@ -72,7 +72,7 @@ export default function CarePage() {
             <label>Request title<input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="e.g. Help me understand surgery options" maxLength={160} required /></label>
             <label>Details<textarea value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Share what you would like the care team to help with." maxLength={2000} /></label>
             <label>Preferred country<input value={country} onChange={(e) => setCountry(e.target.value)} maxLength={80} /></label>
-            <button type="submit" disabled={busy || loading}>{busy ? "Submitting…" : "Start a care request"} <span>→</span></button>
+            <button type="submit" disabled={busy || loading}>{busy ? "Submitting request…" : "Start a care request"} <span>→</span></button>
             {message && <p className={styles.message} role="status">{message}</p>}
           </form>
         </article>

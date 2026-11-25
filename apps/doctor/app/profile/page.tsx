@@ -19,6 +19,9 @@ export default function DoctorProfile(){
  async function save() {
   if(busy)return;setBusy(true);setMessage("");setError("");
   try {
+   const amount=Number(price);
+   if(!Number.isFinite(amount)||amount<=0||amount>5000)throw new Error("Enter a consultation price greater than $0 and no more than $5,000.");
+   if(bio.length>4000||location.trim().length>160)throw new Error("Biography must be 4,000 characters or fewer and location 160 characters or fewer.");
    const entries=expertise.split(",").map(value=>value.trim()).filter(Boolean);
    if(entries.length>30||entries.some(value=>value.length<2||value.length>120))throw new Error("Enter up to 30 expertise areas with 2–120 characters each.");
    const profile=await apiFetch<Doctor>("/v1/doctor/me/profile",jsonRequest("PATCH",{bio,location,consultationPriceUsd:Number(price),expertise:entries}));

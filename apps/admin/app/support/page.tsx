@@ -4,8 +4,8 @@ import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { getCurrentUser } from "../../lib/api";
 
-import { apiFetch, jsonRequest } from "../../lib/request";
-type Ticket = { id: string; userId: string; category: string; message: string; status: string; createdAt: string; user: { id: string; email: string; role: string } };
+import { apiFetch,jsonRequest } from "../../lib/request";
+type Ticket = { id: string; userId: string; category: string; message: string; status: string; priority: string; slaDueAt: string | null; escalatedAt: string | null; createdAt: string; user: { id: string; email: string; role: string } };
 type SupportMessage = { id: string; message: string; createdAt: string; author: { id: string; role: string } };
 
 export default function AdminSupportPage() {
@@ -14,33 +14,45 @@ export default function AdminSupportPage() {
   const [thread, setThread] = useState<SupportMessage[]>([]);
   const [reply, setReply] = useState("");
   const [status, setStatus] = useState("OPEN");
+  const [priority, setPriority] = useState("NORMAL");
+  const [escalated, setEscalated] = useState(false);
+  const [queueFilter, setQueueFilter] = useState("ALL");
+  const [now, setNow] = useState<number | null>(null);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
-  const activeTicketId = useRef("");
-  const [threadLoading, setThreadLoading] = useState(false);
-  const [loading, setLoading] = useState(true);
-  const selectedId = selected?.id;
-  const load = useCallback(async () => {
+  const [loading,setLoading]=useState(true);
+  const [threadLoading,setThreadLoading]=useState(false);
+  const queueRequest=useRef(0);
+  const threadRequest=useRef(0);
+  const activeTicketId=useRef("");
+  const load = useCallback(async (filter = queueFilter) => {
+    const requestId=++queueRequest.current;
     const session = await getCurrentUser();
     if (session.user.role !== "ADMIN") throw new Error("Administrator access required.");
-    const rows = await apiFetch<Ticket[]>("/v1/admin/support/tickets?limit=100"); setTickets(rows);
-    if (selectedId) { const updated = rows.find(t => t.id === selectedId); if (updated) setSelected(updated); }
-  }, [selectedId]);
-  async function openTicket(ticket: Ticket) {
-    activeTicketId.current = ticket.id;
-    setSelected(ticket); setStatus(ticket.status); setError(""); setThread([]); setReply(""); setThreadLoading(true);
-    try {
-      const messages = await apiFetch<SupportMessage[]>(`/v1/support/tickets/${encodeURIComponent(ticket.id)}/messages`);
-      if (activeTicketId.current === ticket.id) setThread(messages);
-    } catch(cause) { if (activeTicketId.current === ticket.id) setError(cause instanceof Error ? cause.message : "Unable to load this conversation."); }
-    finally { if (activeTicketId.current === ticket.id) setThreadLoading(false); }
-  }
-  useEffect(() => { const timer = window.setTimeout(() => { void load().catch(e => setError(e instanceof Error ? e.message : "Unable to load support queue.")).finally(() => setLoading(false)); }, 0); return () => window.clearTimeout(timer); }, [load]);
+    const query = new URLSearchParams({ limit: "100" });
+    if (filter === "OVERDUE") query.set("overdue", "true");
+    if (filter === "ESCALATED") query.set("escalated", "true");
+    const rows=await apiFetch<Ticket[]>("/v1/admin/support/tickets?"+query.toString());
+    if(requestId!==queueRequest.current)return [];
+    setTickets(rows);
+    setSelected((current) => current ? (rows.find((ticket) => ticket.id === current.id) ?? null) : null);
+    return rows;
+  }, [queueFilter]);
+  const openTicket=useCallback(async(ticket:Ticket)=>{
+    const requestId=++threadRequest.current;activeTicketId.current=ticket.id;
+    setSelected(ticket);setStatus(ticket.status);setPriority(ticket.priority??"NORMAL");setEscalated(Boolean(ticket.escalatedAt));setError("");setThread([]);setReply("");setThreadLoading(true);
+    try{const messages=await apiFetch<SupportMessage[]>(`/v1/support/tickets/${encodeURIComponent(ticket.id)}/messages`);if(requestId===threadRequest.current&&activeTicketId.current===ticket.id)setThread(messages);}
+    catch(cause){if(requestId===threadRequest.current)setError(cause instanceof Error?cause.message:"Unable to load this conversation.");}
+    finally{if(requestId===threadRequest.current)setThreadLoading(false);}
+  },[]);
+
+  useEffect(() => { const timer = window.setTimeout(() => { void (async () => { try { const rows = await load(); const ticketId = new URLSearchParams(window.location.search).get("ticket"); const ticket = ticketId ? rows.find(item => item.id === ticketId) : undefined; if (ticket) await openTicket(ticket); } catch (e) { setError(e instanceof Error ? e.message : "Unable to load support queue."); } finally{setLoading(false);} })(); }, 0); return () => window.clearTimeout(timer); }, [load, openTicket]);
+  useEffect(() => { const first = window.setTimeout(() => setNow(Date.now()), 0); const interval = window.setInterval(() => setNow(Date.now()), 60_000); return () => { window.clearTimeout(first); window.clearInterval(interval); }; }, []);
   async function sendReply() {
     if (busy || !selected || !reply.trim()) return;
     setBusy(true); setError("");
     try {
-      await apiFetch(`/v1/support/tickets/${encodeURIComponent(selected.id)}/messages`, jsonRequest("POST", { message: reply.trim() }));
+      await apiFetch(`/v1/support/tickets/${encodeURIComponent(selected.id)}/messages`,jsonRequest("POST",{message:reply.trim()}));
       setReply("");
       await openTicket(selected);
       await load();
@@ -51,7 +63,7 @@ export default function AdminSupportPage() {
     if (busy || !selected) return;
     setBusy(true); setError("");
     try {
-      await apiFetch(`/v1/admin/support/tickets/${encodeURIComponent(selected.id)}`, jsonRequest("PATCH", { status }));
+      await apiFetch(`/v1/admin/support/tickets/${encodeURIComponent(selected.id)}`,jsonRequest("PATCH",{status,priority,escalated}));
       await load();
     } catch (e) { setError(e instanceof Error ? e.message : "Unable to update request."); }
     finally { setBusy(false); }
@@ -62,13 +74,13 @@ export default function AdminSupportPage() {
       <p style={{ color: "#64748b", fontSize: 12, fontWeight: 800, letterSpacing: ".12em", marginTop: 26 }}>CAREBRIDGE · ADMIN SUPPORT</p>
       <h1 style={{ fontSize: 40, margin: "8px 0" }}>Support conversations</h1><p style={{ color: "#64748b" }}>Review incoming requests, reply securely and update the request status.</p>
       {error && <div role="alert" style={{ padding: 14, background: "#fff7ed", borderRadius: 12, marginTop: 14 }}>{error}</div>}
-      <div className="workspace-columns" style={{ marginTop: 24 }}>
-        <section style={panel}><h2>Request queue</h2>{loading ? <p role="status">Loading requests…</p> : !tickets.length ? <p>No support requests.</p> : tickets.map(t => <button key={t.id} disabled={busy} onClick={() => void openTicket(t)} style={{ display: "block", width: "100%", textAlign: "left", padding: 14, border: 0, borderTop: "1px solid #eef2f7", background: selected?.id === t.id ? "#f0f7fc" : "white", cursor: "pointer" }}><div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}><b>{t.category}</b><span>{t.status}</span></div><p style={{ margin: "8px 0" }}>{t.message}</p><small style={{ color: "#64748b" }}>{t.user.email} · {t.user.role}</small></button>)}</section>
+      <div className="workspace-columns" style={{marginTop:24}}>
+        <section style={panel}><h2>Request queue</h2><label style={{ display: "grid", gap: 6, marginBottom: 12, fontWeight: 700 }}>Filter queue<select disabled={busy} value={queueFilter} onChange={e => setQueueFilter(e.target.value)} style={{ padding: 10, border: "1px solid #cbd5e1", borderRadius: 10 }}><option value="ALL">All requests</option><option value="OVERDUE">SLA overdue</option><option value="ESCALATED">Escalated</option></select></label>{loading?<p role="status">Loading support requests…</p>:!tickets.length ? <p>No support requests match this filter.</p> : tickets.map(t => <button key={t.id} disabled={busy} onClick={() => void openTicket(t)} style={{ display: "block", width: "100%", textAlign: "left", padding: 14, border: 0, borderTop: "1px solid #eef2f7", background: selected?.id === t.id ? "#f0f7fc" : "white", cursor: "pointer" }}><div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}><b>{t.category}</b><span>{t.status}</span></div><p style={{ margin: "8px 0" }}>{t.message}</p><small style={{ display: "block", color: now !== null && t.slaDueAt && new Date(t.slaDueAt).getTime() < now && !["RESOLVED","CLOSED"].includes(t.status) ? "#b91c1c" : "#64748b" }}>Priority: {t.priority ?? "NORMAL"} · SLA due: {t.slaDueAt ? new Date(t.slaDueAt).toLocaleString() : "Not set"}{t.escalatedAt ? " · ESCALATED" : ""}</small><small style={{ color: "#64748b" }}>{t.user.email} · {t.user.role}</small></button>)}</section>
         <section style={{ ...panel, minHeight: 440, display: "flex", flexDirection: "column" }}><h2>{selected ? selected.category + " · Conversation" : "Select a request"}</h2>
           {!selected ? <p style={{ color: "#64748b" }}>Choose a request to review its thread and respond.</p> : <>
-            <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 12 }}><select aria-label="Request status" disabled={busy} value={status} onChange={e => setStatus(e.target.value)} style={{ padding: 10, borderRadius: 10, border: "1px solid #cbd5e1" }}><option>OPEN</option><option>IN_PROGRESS</option><option>RESOLVED</option><option>CLOSED</option></select><button disabled={busy || status === selected.status} onClick={() => void updateStatus()} style={{ padding: "10px 13px", borderRadius: 10, border: "1px solid #cbd5e1", background: "white" }}>Update status</button></div>
-            <div aria-live="polite" style={{ display: "grid", gap: 12, alignContent: "start", flex: 1, margin: "8px 0 18px" }}><div style={{ padding: 14, borderRadius: 14, background: "#f1f5f9" }}><b>{selected.user.email} · Original request</b><p style={{ whiteSpace: "pre-wrap", marginBottom: 0 }}>{selected.message}</p></div>{threadLoading && <p role="status">Loading conversation…</p>}{thread.map(m => <div key={m.id} style={{ padding: 14, borderRadius: 14, background: m.author.role === "ADMIN" ? "#eaf5ff" : "#f8fafc" }}><b>{m.author.role === "ADMIN" ? "CareBridge Support" : selected.user.email}</b><p style={{ whiteSpace: "pre-wrap", margin: "8px 0" }}>{m.message}</p><small style={{ color: "#64748b" }}>{new Date(m.createdAt).toLocaleString()}</small></div>)}</div>
-            <label style={{ display: "grid", gap: 7, fontWeight: 700 }}>Reply<textarea disabled={busy || threadLoading} value={reply} onChange={e => setReply(e.target.value)} rows={3} maxLength={5000} placeholder="Write a response..." style={{ padding: 12, border: "1px solid #cbd5e1", borderRadius: 12 }} /></label><button disabled={busy || threadLoading || !reply.trim()} onClick={() => void sendReply()} style={{ alignSelf: "start", marginTop: 12, padding: "12px 16px", border: 0, borderRadius: 12, background: "#1672b8", color: "white", fontWeight: 800 }}>Send reply</button>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(130px,1fr))", gap: 10, marginBottom: 12 }}><label style={{ display: "grid", gap: 5, fontWeight: 700 }}>Status<select disabled={busy} value={status} onChange={e => setStatus(e.target.value)} style={{ padding: 10, borderRadius: 10, border: "1px solid #cbd5e1" }}><option>OPEN</option><option>IN_PROGRESS</option><option>RESOLVED</option><option>CLOSED</option></select></label><label style={{ display: "grid", gap: 5, fontWeight: 700 }}>Priority<select disabled={busy} value={priority} onChange={e => setPriority(e.target.value)} style={{ padding: 10, borderRadius: 10, border: "1px solid #cbd5e1" }}><option>LOW</option><option>NORMAL</option><option>HIGH</option></select></label></div><label style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}><input disabled={busy} type="checkbox" checked={escalated} onChange={e => setEscalated(e.target.checked)} /> Escalate for additional review</label><button disabled={busy || (status === selected.status && priority === (selected.priority ?? "NORMAL") && escalated === Boolean(selected.escalatedAt))} onClick={() => void updateStatus()} style={{ padding: "10px 13px", borderRadius: 10, border: "1px solid #cbd5e1", background: "white" }}>Save support settings</button>
+            <div aria-live="polite" style={{ display: "grid", gap: 12, alignContent: "start", flex: 1, margin: "8px 0 18px" }}><div style={{ padding: 14, borderRadius: 14, background: "#f1f5f9" }}><b>{selected.user.email} · Original request</b><p style={{ whiteSpace: "pre-wrap", marginBottom: 0 }}>{selected.message}</p></div>{threadLoading&&<p role="status">Loading conversation…</p>}{thread.map(m => <div key={m.id} style={{ padding: 14, borderRadius: 14, background: m.author.role === "ADMIN" ? "#eaf5ff" : "#f8fafc" }}><b>{m.author.role === "ADMIN" ? "CareBridge Support" : selected.user.email}</b><p style={{ whiteSpace: "pre-wrap", margin: "8px 0" }}>{m.message}</p><small style={{ color: "#64748b" }}>{new Date(m.createdAt).toLocaleString()}</small></div>)}</div>
+            <label style={{ display: "grid", gap: 7, fontWeight: 700 }}>Reply<textarea disabled={busy||threadLoading} value={reply} onChange={e => setReply(e.target.value)} rows={3} maxLength={5000} placeholder="Write a response..." style={{ padding: 12, border: "1px solid #cbd5e1", borderRadius: 12 }} /></label><button disabled={busy || threadLoading || !reply.trim()} onClick={() => void sendReply()} style={{ alignSelf: "start", marginTop: 12, padding: "12px 16px", border: 0, borderRadius: 12, background: "#1672b8", color: "white", fontWeight: 800 }}>Send reply</button>
           </>}
         </section>
       </div>

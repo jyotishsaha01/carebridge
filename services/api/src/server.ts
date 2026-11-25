@@ -41,6 +41,7 @@ function serializeDoctor(doctor: PublicDoctor) {
     usLow: doctor.costComparison ? Number(doctor.costComparison.comparableLowUsd) : null,
     usHigh: doctor.costComparison ? Number(doctor.costComparison.comparableHighUsd) : null,
     expertise: doctor.expertise, bio: doctor.bio, verified: doctor.isVerified,
+    isNew: doctor.createdAt >= new Date(Date.now() - 30 * 86400_000),
   };
 }
 

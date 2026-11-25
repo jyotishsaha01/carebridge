@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Image from "next/image";
-import { getDoctors, getSpecialties, type ApiDoctor } from "../lib/api";
+import { getCurrentUser, getDoctors, getSpecialties, type ApiDoctor } from "../lib/api";
 import { doctors as demoDoctors, specialties as demoSpecialties } from "../data";
 import SpecialistDialog from "./specialist-dialog";
 
@@ -10,6 +10,7 @@ const HERO_IMAGES = Array.from({ length: 10 }, (_, index) => `/images/hero/care-
 const ALLOW_DEMO_CATALOG = process.env.NODE_ENV !== "production";
 
 export default function Home() {
+  const [signedIn, setSignedIn] = useState(false);
   const [query, setQuery] = useState("");
   const [specialty, setSpecialty] = useState("All specialties");
   const [doctorList, setDoctorList] = useState<ApiDoctor[]>([]);
@@ -18,6 +19,14 @@ export default function Home() {
   const [apiState, setApiState] = useState<"loading" | "connected" | "fallback" | "error">("loading");
   const [retry, setRetry] = useState(0);
   const [activeHeroImage, setActiveHeroImage] = useState(0);
+
+  useEffect(() => {
+    let active = true;
+    const refresh = () => { void getCurrentUser().then(({ user }) => { if (active) setSignedIn(user.role === "PATIENT"); }).catch(() => { if (active) setSignedIn(false); }); };
+    refresh();
+    window.addEventListener("carebridge:session-expired", refresh);
+    return () => { active = false; window.removeEventListener("carebridge:session-expired", refresh); };
+  }, []);
 
   useEffect(() => {
     if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
@@ -70,14 +79,14 @@ export default function Home() {
   return (
     <main className="site-shell">
       <header className="topbar">
-        <a className="brand" href="#top" aria-label="CareBridge home">
+        <a className="brand" href={signedIn ? "/dashboard" : "#top"} aria-label={signedIn ? "CareBridge patient dashboard" : "CareBridge home"}>
           <span className="brand-mark" aria-hidden="true"><i /><i /></span>
           <span>CareBridge</span>
         </a>
         <nav className="nav-links" aria-label="Primary navigation">
           <a className="nav-primary" href="#specialists">Find a specialist</a>
           <a href="#how-it-works">How it works</a>
-          <a href="#smart-cost">Pricing</a>
+          <a href="/compare">Compare costs</a>
           <a className="nav-login" href="/login">Sign in</a>
         </nav>
       </header>
@@ -140,7 +149,7 @@ export default function Home() {
         <div className="doctor-grid" aria-live="polite" aria-busy={apiState === "loading"}>
           {filteredDoctors.map((doctor) => (
             <article className="doctor-card" key={doctor.id}>
-              <div className="doctor-card-top"><div className="avatar" aria-hidden="true">{doctor.initials}</div>{doctor.verified && <span className="verified"><span aria-hidden="true">✓</span> {apiState === "fallback" ? "Demo profile" : "Verified"}</span>}</div>
+              <div className="doctor-card-top"><div className="avatar" aria-hidden="true">{doctor.initials}</div>{doctor.isNew && <span className="verified">New specialist</span>}{doctor.verified && <span className="verified"><span aria-hidden="true">✓</span> {apiState === "fallback" ? "Demo profile" : "Verified"}</span>}</div>
               <h3>{doctor.name}</h3><p className="doctor-specialty">{doctor.specialty}</p>
               <div className="rating"><span aria-label={`${doctor.rating} out of 5 stars`}>★ {doctor.rating}</span><span className="rating-divider">/</span>{doctor.experience} years experience</div>
               <div className="expertise-row">{doctor.expertise.slice(0, 3).map((item) => <span key={item}>{item}</span>)}</div>

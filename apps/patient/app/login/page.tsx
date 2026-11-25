@@ -90,6 +90,11 @@ export default function LoginPage() {
           <h1>{mode === "login" ? "Welcome back." : "Start your care journey."}</h1>
           <p>{mode === "login" ? "Sign in to manage consultations, medical records and follow-ups." : role === "DOCTOR" ? "Create your clinician profile and submit credentials for verification." : role === "ADMIN" ? "Administrator accounts are available by invitation only." : "Create a secure patient account to book consultations and keep your care organized."}</p>
         </div>
+        <nav aria-label="Choose your CareBridge portal" style={{ display: "flex", gap: 16, flexWrap: "wrap", margin: "18px 0" }}>
+          <Link href="/login" aria-current="page">Patient portal</Link>
+          <a href={new URL("/login", process.env.NEXT_PUBLIC_DOCTOR_APP_URL ?? "http://localhost:3001").toString()}>Doctor sign in →</a>
+          <a href={new URL("/login", process.env.NEXT_PUBLIC_ADMIN_APP_URL ?? "http://localhost:3002").toString()}>Admin sign in →</a>
+        </nav>
         <div className={styles.tabs} role="group" aria-label="Account access">
           <button className={mode === "login" ? styles.active : ""} aria-pressed={mode === "login"} disabled={busy} onClick={() => { setMode("login"); setMessage(""); }} type="button">Sign in</button>
           <button className={mode === "signup" ? styles.active : ""} aria-pressed={mode === "signup"} disabled={busy} onClick={() => { setMode("signup"); setRole("PATIENT"); setMessage(""); }} type="button">Create account</button>

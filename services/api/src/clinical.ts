@@ -51,10 +51,38 @@ export async function registerClinicalRoutes(app: FastifyInstance) {
     }));
   });
 
+  app.post("/v1/doctor/appointments/:appointmentId/cancel", async (request, reply) => {
+    const user = await requireDoctor(request, reply);
+    if (!user?.doctor) return;
+    const { appointmentId } = z.object({ appointmentId: z.string().trim().min(1) }).parse(request.params);
+    const input = z.object({ reason: z.string().trim().min(3).max(1000) }).parse(request.body);
+
+    let appointment;
+    try {
+      appointment = await withLockedAppointment({ id: appointmentId, doctorId: user.doctor.id }, async (tx) => {
+        const current = await tx.appointment.findFirst({ where: { id: appointmentId, doctorId: user.doctor!.id }, include: { patient: { select: { userId: true } }, consultation: { select: { status: true } } } });
+        if (!current) throw new AppointmentStateError(404, "Appointment not found");
+        if (current.status !== "BOOKED" || current.scheduledAt <= new Date() || (current.consultation && ["IN_PROGRESS", "COMPLETED"].includes(current.consultation.status))) throw new AppointmentStateError(409, "Only future, unstarted appointments can be cancelled");
+        await tx.appointment.update({ where: { id: appointmentId }, data: { status: "CANCELLED" } });
+        await tx.consultation.updateMany({ where: { appointmentId, status: "SCHEDULED" }, data: { status: "CANCELLED" } });
+        await tx.availabilitySlot.updateMany({ where: { doctorId: current.doctorId, startsAt: current.scheduledAt, status: "BOOKED" }, data: { status: "AVAILABLE" } });
+        await recordAudit(request, { actorUserId: user.id, action: "DOCTOR_APPOINTMENT_CANCELLED", resourceType: "Appointment", resourceId: current.id, outcome: "SUCCESS", metadata: { reason: input.reason } }, tx);
+        return current;
+      });
+    } catch (error) {
+      if (error instanceof AppointmentStateError) return reply.code(error.statusCode).send({ error: error.message });
+      throw error;
+    }
+    try {
+      await createNotification({ userId: appointment.patient.userId, role: "PATIENT", type: "CONSULTATION", title: "Appointment cancelled by your doctor", body: "Your appointment scheduled for " + appointment.scheduledAt.toISOString() + " was cancelled. Reason: " + input.reason });
+    } catch { request.log.warn({ resourceType: "Appointment" }, "Cancellation committed; notification delivery failed"); }
+    return { id: appointment.id, status: "CANCELLED" };
+  });
+
   app.put("/v1/doctor/appointments/:appointmentId/consultation", async (request, reply) => {
     const user = await requireDoctor(request, reply);
     if (!user?.doctor) return;
-    const { appointmentId } = z.object({ appointmentId: z.string().min(1) }).parse(request.params);
+    const { appointmentId } = z.object({ appointmentId: z.string().trim().min(1) }).parse(request.params);
     const input = consultationPayload.parse(request.body);
     let consultation;
     try {
@@ -64,8 +92,9 @@ export async function registerClinicalRoutes(app: FastifyInstance) {
         if (appointment.status === "CANCELLED") throw new AppointmentStateError(409, "A cancelled appointment cannot have an active consultation");
         if (["IN_PROGRESS", "COMPLETED"].includes(input.status) && !hasConsent(appointment.medicalIntake)) throw new AppointmentStateError(409, "The patient must submit their consultation consent before clinical care can begin");
         if (appointment.consultation && ["COMPLETED", "CANCELLED"].includes(appointment.consultation.status) && input.status !== appointment.consultation.status) throw new AppointmentStateError(409, "A completed or cancelled consultation cannot be reopened");
-        if (appointment.consultation?.status === "IN_PROGRESS" && input.status === "SCHEDULED") throw new AppointmentStateError(409, "A started consultation cannot return to an editable intake state");
 
+        if (input.status === "COMPLETED" && !appointment.consultation) throw new AppointmentStateError(409, "Start the consultation before completing it");
+        if (!["IN_PROGRESS", "COMPLETED"].includes(input.status)) throw new AppointmentStateError(409, "Use the dedicated appointment workflow to change scheduling or cancellation");
         const now = new Date();
         const updated = await tx.consultation.upsert({
           where: { appointmentId },
@@ -85,6 +114,7 @@ export async function registerClinicalRoutes(app: FastifyInstance) {
             endedAt: input.status === "COMPLETED" ? now : null,
           },
         });
+        if (input.status === "COMPLETED") await tx.appointment.update({ where: { id: appointmentId }, data: { status: "COMPLETED" } });
         await recordAudit(request, { actorUserId: user.id, action: "CLINICAL_CONSULTATION_STATUS", resourceType: "Consultation", resourceId: updated.id, outcome: "SUCCESS", metadata: { status: input.status } }, tx);
         return updated;
       });
@@ -106,6 +136,29 @@ export async function registerClinicalRoutes(app: FastifyInstance) {
     return consultation;
   });
 
+  app.get("/v1/doctor/appointments/:appointmentId/clinical-record", async (request, reply) => {
+    const user = await requireDoctor(request, reply);
+    if (!user?.doctor) return;
+    const { appointmentId } = z.object({ appointmentId: z.string().trim().min(1) }).parse(request.params);
+    const appointment = await prisma.appointment.findFirst({
+      where: { id: appointmentId, doctorId: user.doctor.id, status: { not: "CANCELLED" } },
+      select: { id: true },
+    });
+    if (!appointment) return reply.code(404).send({ error: "Appointment not found" });
+
+    const consultation = await prisma.consultation.findFirst({
+      where: { appointmentId, doctorId: user.doctor.id, status: { not: "CANCELLED" } },
+    });
+    if (!consultation) return { consultation: null, notes: [], prescription: null, followUps: [] };
+
+    const [notes, prescription, followUps] = await Promise.all([
+      prisma.clinicalNote.findMany({ where: { consultationId: consultation.id }, orderBy: { createdAt: "desc" } }),
+      prisma.prescription.findUnique({ where: { consultationId: consultation.id }, include: { items: true } }),
+      prisma.followUp.findMany({ where: { consultationId: consultation.id }, orderBy: { createdAt: "desc" } }),
+    ]);
+    return { consultation, notes, prescription, followUps };
+  });
+
   app.put("/v1/doctor/consultations/:consultationId/note", async (request, reply) => {
     const user = await requireDoctor(request, reply);
     if (!user?.doctor) return;
@@ -113,12 +166,13 @@ export async function registerClinicalRoutes(app: FastifyInstance) {
     const input = notePayload.parse(request.body);
     const consultation = await prisma.consultation.findFirst({ where: { id: consultationId, doctorId: user.doctor.id, status: { not: "CANCELLED" }, appointment: { status: { not: "CANCELLED" } } }, include: { appointment: { select: { medicalIntake: consentSelection } } } });
     if (!consultation) return reply.code(404).send({ error: "Consultation not found" });
-    if (!["IN_PROGRESS", "COMPLETED"].includes(consultation.status)) return reply.code(409).send({ error: "The consultation must be started before clinical records can be changed" });
+    if (consultation.status !== "IN_PROGRESS") return reply.code(409).send({ error: "Clinical notes can only be saved while the consultation is in progress" });
     if (!hasConsent(consultation.appointment.medicalIntake)) return reply.code(409).send({ error: "The patient must submit their consultation consent before clinical records can be changed" });
     const note = await prisma.$transaction(async (tx) => {
-      const created = await tx.clinicalNote.create({ data: { consultationId, ...input } });
-      await recordAudit(request, { actorUserId: user.id, action: "CLINICAL_NOTE_CREATED", resourceType: "ClinicalNote", resourceId: created.id, outcome: "SUCCESS" }, tx);
-      return created;
+      const existing = await tx.clinicalNote.findFirst({ where: { consultationId }, orderBy: { createdAt: "desc" } });
+      const saved = existing ? await tx.clinicalNote.update({ where: { id: existing.id }, data: input }) : await tx.clinicalNote.create({ data: { consultationId, ...input } });
+      await recordAudit(request, { actorUserId: user.id, action: "CLINICAL_NOTE_SAVED", resourceType: "ClinicalNote", resourceId: saved.id, outcome: "SUCCESS" }, tx);
+      return saved;
     });
     return note;
   });

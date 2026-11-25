@@ -63,12 +63,15 @@ The latest security pass verifies 173 unit/regression tests, 32 browser tests, a
 - [x] Patient payment history UI
 - [x] Patient notification center
 - [x] Notification read/unread APIs
+- [x] Notification center supports deleting an owned notification and clearing all read notifications, with user-scoped server-side deletion
 - [x] Patient Care Hub
 - [x] Care plan and care-task APIs
 - [x] Care request workflow for diagnostic/medication/procedure/surgery coordination
 - [x] Admin care-request queue
 - [x] Admin operational analytics
 - [x] Patient dashboard connected to live patient counts and notifications
+- [x] Doctor dashboard loads the authenticated doctor profile, real assigned appointments, intake status, and open-slot count from API endpoints
+- [x] Patient appointment lifecycle: future booked appointments can be cancelled or rescheduled with slot synchronization, ownership checks, notifications and audit logging
 - [x] Support request creation, status updates and admin queue
 - [x] Threaded support messages with patient/admin authorization checks
 - [x] Real-time notifications for support request creation, replies and status updates
@@ -77,7 +80,8 @@ The latest security pass verifies 173 unit/regression tests, 32 browser tests, a
 - [ ] Production identity provider / MFA policy
 - [ ] HIPAA/privacy/legal review and signed vendor agreements where required
 - [ ] Production encrypted object storage, malware scanning and access-control validation
-- [ ] Support attachments and escalation/SLA workflow
+- [x] Support attachments: upload/list/retrieve endpoints, ticket-owner/admin authorization, PDF/PNG/JPEG signature checks, 5 MB limit, private storage, and audit events
+- [x] Support priority-based SLA deadlines, overdue filtering, admin escalation controls, escalation notifications, and audit logging
 - [ ] Production video provider provisioning and security review
 - [ ] Security assessment / penetration testing
 - [ ] Backup/restore rehearsal and disaster-recovery validation
@@ -91,3 +95,39 @@ Development, test and QA environments use synthetic data only. No real patient h
 ## Current development direction
 
 **Booking, payment checkout and video are intentionally parked.** Continue building the remaining platform around them: doctor operations, care coordination, notifications, production storage, compliance/security controls, analytics, support and deployment readiness.
+
+## Latest functional work — 24 Oct 2026
+
+- [x] Added fail-closed malware scan enforcement to patient document uploads; scan rejections and unavailable scanner states are audited, and no bytes are stored unless the scanner returns a clean verdict.
+- [ ] Configure `MALWARE_SCANNER_URL` and validate the external scanner/credentials against synthetic test files in the target environment before release.
+
+- [x] Medical intake API: validate appointment IDs and questionnaire field lengths; return field-level 400 errors instead of unhandled validation exceptions.
+- [x] Medical intake API: enforce patient ownership before read/write and persist drafts/completed consent state with an upsert.
+- [x] UAT coverage added for questionnaire draft save, fresh-GET persistence, invalid field lengths, and doctor access denial.
+- [x] UAT coverage added for document content ownership boundaries (doctor denied; unknown document returns not found).
+- [x] Document upload API rejects malformed base64, mismatched MIME/file signatures, and storage write failures with controlled responses.
+- [x] Invalid upload metadata returns a structured 400 response with field-level validation details.
+- [x] Notification center API: added authenticated, user-scoped delete-one and clear-read actions; preserves unread notifications when clearing read items.
+- [x] Support workflow: added LOW/NORMAL/HIGH priority with 72/24/4-hour SLA deadlines, admin filters for overdue/escalated tickets, escalation/priority updates, notifications, and audit metadata.
+- [x] Support SLA filters parse true/false query values explicitly and combine status and overdue conditions without silently overriding each other.
+- [x] Support attachment persistence model links files to tickets and uploaders; attachment content is returned only after ticket-owner/admin authorization.
+- [x] Doctor dashboard no longer renders availability slots as fake patient appointments; it loads the real doctor appointment queue, supports status filtering, and links directly to the selected appointment in the clinical workspace.
+- [x] Doctor appointment queue supports reasoned cancellation for future booked appointments with ownership/status checks, transactional slot release, patient notification, and audit logging.
+- [x] Doctor consultation transitions are restricted to starting a booked appointment and completing an in-progress consultation; appointment and consultation states update in one transaction, with stale-state conflicts returned clearly to the workspace.
+- [x] Clinical notes are restricted to in-progress consultations; prescriptions and follow-ups require an in-progress or completed consultation, and the doctor workspace surfaces lifecycle API errors.
+- [x] Added a doctor-scoped clinical-record read endpoint and reloads saved consultation summary, latest note, prescription item, and follow-up when switching appointments in the doctor workspace.
+- [x] Clinical note saves update the latest note rather than creating a duplicate on every edit; the doctor workspace reloads persisted data after successful note, prescription, and follow-up saves.
+- [x] Doctor prescription editor supports multiple medication items, displays saved items on reload, shows a clinical-record loading state, prevents duplicate concurrent save actions, and avoids applying save responses to a newly selected appointment.
+- [x] Patient appointment cancellation is patient-scoped, future-booking-only, transactionally updates appointment/consultation state and releases the booked slot; cancellation is audited and notifies patient and doctor.
+- [x] Patient appointment rescheduling claims a future available slot, updates the booked appointment and releases its previous slot in one transaction, with stale-state/conflict handling, audit metadata and patient/doctor notifications.
+- [x] Patient appointment detail page supports viewing future available slots long enough for the appointment, rescheduling, reasoned cancellation, and clear pending/success/error states.
+- [x] Patient dashboard upcoming appointments exclude cancelled, in-progress, completed, and past appointments so lifecycle changes are reflected in the summary.
+- [x] Removed the appointment-level doctor/time unique constraint so cancelled slots can be booked again; the unique availability-slot constraint plus conditional transaction claim remains the double-booking guard.
+- [x] UAT fixture uses a synthetic PDF signature and covers invalid metadata, malformed base64, and MIME/signature mismatch rejection.
+- [x] Added an S3-compatible object storage provider using built-in SigV4 signing, server-side AES256 encryption headers, and 5-minute signed download URLs; document writes/reads now go through the provider abstraction.
+- [x] Production configuration fails closed if local storage is selected or required S3 credentials/encryption settings are missing; added storage provider validation tests.
+- [ ] Provision the private bucket, least-privilege IAM credentials, lifecycle/retention policy, malware scanning, and verify endpoint/region/encryption configuration in the target environment.
+- [x] CareBridge foundation checks and API UAT integration passed for the current PR #42 head; QA-only smoke was skipped because this is not a QA-targeted branch.
+- [ ] Rebase the remaining open PR branches against current `main` and rerun latest-head CI; several branches overlap in `services/api/src/documents.ts`, `services/api/src/support.ts`, and `services/api/src/uatSmoke.ts`, and GitHub currently reports them as non-mergeable.
+- [x] Removed the hard-coded demo patient fallback from the live doctor workspace; loading, empty, API-error, and retry states are shown instead.
+- [ ] Perform manual browser regression for patient login, questionnaire save/reload, and document preview/upload.

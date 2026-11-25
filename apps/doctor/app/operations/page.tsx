@@ -14,6 +14,7 @@ export default function OperationsPage() {
   const [startsAt, setStartsAt] = useState("");
   const [duration, setDuration] = useState("30");
   async function load() {
+    setError("");
     try { setSlots(await apiFetch<Slot[]>("/v1/doctor/availability")); }
     catch (cause) { setError(cause instanceof Error ? cause.message : "Unable to load availability."); }
     finally { setLoading(false); }
@@ -40,6 +41,7 @@ export default function OperationsPage() {
   return <main style={{ maxWidth: 960, margin: "auto", padding: "36px 24px" }}><Link href="/dashboard">← Dashboard</Link><p>CareBridge · Provider operations</p><h1>Availability</h1><p>Create consultation slots in your local time zone. Booked slots cannot be removed.</p>
     {error && <p role="alert" className="note">{error}</p>}{message && <p role="status">{message}</p>}
     <form onSubmit={event => void add(event)} className="card" style={{ display: "grid", gap: 14, margin: "24px 0" }}><label>Start date and time<input type="datetime-local" required value={startsAt} onChange={event => setStartsAt(event.target.value)}/></label><label>Duration<select value={duration} onChange={event => setDuration(event.target.value)} style={{ display: "block", padding: 10, marginTop: 6 }}><option value="15">15 minutes</option><option value="30">30 minutes</option><option value="45">45 minutes</option><option value="60">60 minutes</option></select></label><button type="submit" disabled={busy || loading} className="button">{busy ? "Saving…" : "Add consultation slot"}</button></form>
-    {loading ? <p role="status">Loading availability…</p> : !slots.length ? <p>No availability yet. Add your first consultation slot above.</p> : <div style={{ display: "grid", gap: 12 }}>{slots.map(slot => <div key={slot.id} className="card row" style={{ flexWrap: "wrap" }}><span>{new Date(slot.startsAt).toLocaleString()} – {new Date(slot.endsAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}</span><button disabled={busy || slot.status !== "AVAILABLE"} onClick={() => void remove(slot.id)}>{slot.status === "AVAILABLE" ? "Remove" : slot.status}</button></div>)}</div>}
+    <div className="row"><h2>Your scheduled slots</h2><button disabled={loading||busy} onClick={()=>{setLoading(true);void load();}}>Refresh</button></div>
+    {loading ? <p role="status">Loading availability…</p> : !slots.length ? <p>No availability yet. Add your first consultation slot above.</p> : <div style={{ display: "grid", gap: 12 }}>{[...slots].sort((a,b)=>new Date(a.startsAt).getTime()-new Date(b.startsAt).getTime()).map(slot => <div key={slot.id} className="card row" style={{ flexWrap: "wrap" }}><span>{new Date(slot.startsAt).toLocaleString()} – {new Date(slot.endsAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}</span><button disabled={busy || slot.status !== "AVAILABLE"} onClick={() => void remove(slot.id)}>{slot.status === "AVAILABLE" ? "Remove" : slot.status}</button></div>)}</div>}
   </main>;
 }

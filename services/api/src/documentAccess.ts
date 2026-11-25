@@ -4,6 +4,7 @@ import { z } from "zod";
 import { prisma } from "./server";
 import { requireVerifiedDoctor } from "./auth";
 import { recordAudit } from "./audit";
+import { documentStorage } from "./storage";
 
 export async function registerDocumentAccessRoutes(app: FastifyInstance) {
   app.get("/v1/doctor/patients/:patientId/documents", async (request, reply) => {
@@ -32,8 +33,7 @@ export async function registerDocumentAccessRoutes(app: FastifyInstance) {
       return reply.code(404).send({ error: "Document not found" });
     }
     try {
-      const { readDocument } = await import("./documentStoragePrototype.js");
-      const content = await readDocument(document.storageKey);
+      const content = await documentStorage.readDocument(document.storageKey);
       await recordAudit(request, { actorUserId: doctor.id, action: "DOCTOR_DOCUMENT_CONTENT_VIEWED", resourceType: "MedicalDocument", resourceId: documentId, outcome: "SUCCESS" });
       return { contentBase64: content.toString("base64"), contentType: document.contentType, originalFileName: document.originalFileName };
     } catch {

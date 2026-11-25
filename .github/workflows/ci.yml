@@ -3,7 +3,7 @@ name: CareBridge CI
 on:
   pull_request:
   push:
-    branches: [main, develop, test, qa, 'feature/**', 'codex/**']
+    branches: [main, develop, test, qa, 'feature/**', 'feat/**', 'fix/**', 'security/**', 'regression/**', 'chore/**', 'hotfix/**', 'codex/**']
 
 permissions:
   contents: read
@@ -15,6 +15,7 @@ concurrency:
 env:
   NEXT_TELEMETRY_DISABLED: '1'
   NEXT_PUBLIC_API_URL: https://api.carebridge.test
+  NEXT_PUBLIC_PATIENT_APP_URL: https://app.carebridge.test
   NEXT_PUBLIC_DOCTOR_APP_URL: https://doctor.carebridge.test
   NEXT_PUBLIC_ADMIN_APP_URL: https://admin.carebridge.test
 
@@ -165,6 +166,7 @@ jobs:
             docker build -f infrastructure/Dockerfile.web -t carebridge-check \
               --build-arg APP="$APP" \
               --build-arg NEXT_PUBLIC_API_URL="$NEXT_PUBLIC_API_URL" \
+              --build-arg NEXT_PUBLIC_PATIENT_APP_URL="$NEXT_PUBLIC_PATIENT_APP_URL" \
               --build-arg NEXT_PUBLIC_DOCTOR_APP_URL="$NEXT_PUBLIC_DOCTOR_APP_URL" \
               --build-arg NEXT_PUBLIC_ADMIN_APP_URL="$NEXT_PUBLIC_ADMIN_APP_URL" .
           fi
@@ -191,3 +193,16 @@ jobs:
       - name: Remove test container
         if: always()
         run: docker rm -f carebridge-check || true
+
+  qa-smoke:
+    needs: [foundation-check, uat-integration]
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/qa' || github.base_ref == 'qa'
+    steps:
+      - uses: actions/checkout@v4
+      - name: QA environment guard
+        run: |
+          test -f .env.test.example
+          test -f docs/project/TESTING_ENVIRONMENT.md
+          test -f docs/testing/TEST-PLAN.md
+          echo "QA configuration files present; real patient data is prohibited."

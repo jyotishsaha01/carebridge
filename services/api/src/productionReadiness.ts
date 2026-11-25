@@ -1,7 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import { prisma } from "./server";
 
-// Environment flags cannot turn placeholder adapters into real integrations.
+// Environment flags cannot prove that provider integrations are verified for production.
 export const productionCapabilities = Object.freeze({
   emailProvider: false,
   identityMfa: false,

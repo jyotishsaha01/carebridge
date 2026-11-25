@@ -1,10 +1,22 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { bindSession, invalidateSession } from "./session-binding";
-import { ApiError, apiFetch, bookAppointment, getAvailability } from "./api";
+import { ApiError, apiFetch, bookAppointment, getAvailability, getDoctors } from "./api";
 
 afterEach(() => { invalidateSession();vi.unstubAllGlobals(); vi.useRealTimers(); });
 
 describe("patient API boundary", () => {
+  it("keeps default and requested discovery limits within the server's cap", async () => {
+    const fetch = vi.fn(async () => Response.json([]));
+    vi.stubGlobal("fetch", fetch);
+    await getDoctors();
+    await getDoctors({ limit: 100, q: "   " });
+    for (const call of fetch.mock.calls as unknown as Array<[string]>) {
+      const query = new URL(call[0]).searchParams;
+      expect(query.get("limit")).toBe("50");
+      expect(query.has("q")).toBe(false);
+    }
+  });
+
   it("sends authenticated mutations without a demo identity override", async () => {
     const fetch = vi.fn().mockResolvedValueOnce(Response.json({user:{id:"patient-one",role:"PATIENT"}})).mockResolvedValueOnce(Response.json({id:"appointment"}));
     vi.stubGlobal("fetch", fetch);

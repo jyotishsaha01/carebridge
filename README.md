@@ -25,6 +25,8 @@ pnpm --filter @carebridge/admin dev --port 3002
 
 Open [Patient](http://localhost:3000), [Doctor](http://localhost:3001), [Admin](http://localhost:3002), and [API health](http://localhost:4000/health).
 
+The patient sign-in page links to the doctor and admin portals. For non-local builds, set `NEXT_PUBLIC_DOCTOR_APP_URL` and `NEXT_PUBLIC_ADMIN_APP_URL` to their HTTPS origins; the app validates these origins before offering navigation. Set `NEXT_PUBLIC_PATIENT_APP_URL` to enable patient sign-in links from the doctor and admin workspaces.
+
 The API development command loads the root `.env`. If an older local `.env` contains a PostgreSQL URL, change it to `DATABASE_URL=file:./dev.db` for the local SQLite client. The path resolves against `database/prisma/schema.prisma`. Database commands accept an exported `DATABASE_URL`, defaulting to this local SQLite file; they do not source the root `.env`.
 
 `pnpm db:setup` generates the SQLite client, creates/updates the schema, and seeds synthetic accounts. It preserves reserved slots on repeated runs. `pnpm db:reset` explicitly deletes local database data. Demo seeding and local database commands refuse production mode.

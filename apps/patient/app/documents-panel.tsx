@@ -80,10 +80,13 @@ function DocumentsPanelContent() {
   }
 
   async function openDocument(id: string) {
+    const scope = captureSessionScope();
     setOpening(id); setMessage(""); setPreview(null);
     try {
-      const content = await apiFetch<DocumentContent>(`/v1/documents/${encodeURIComponent(id)}/content`);
+      const details = await apiFetch<{ document: { contentType: string } }>(`/v1/documents/${encodeURIComponent(id)}`, { sessionScope: scope });
+      const content = await apiFetch<DocumentContent>(`/v1/documents/${encodeURIComponent(id)}/content`, { sessionScope: scope });
       if (!allowedTypes.includes(content.contentType)) throw new Error("This document type cannot be previewed.");
+      if (content.contentType !== details.document.contentType) throw new Error("The document metadata does not match its stored content. Please contact support.");
       const bytes = Uint8Array.from(atob(content.contentBase64), (char) => char.charCodeAt(0));
       const url = URL.createObjectURL(new Blob([bytes], { type: content.contentType }));
       setPreview({ url, name: content.originalFileName });
@@ -99,7 +102,7 @@ function DocumentsPanelContent() {
       <div className="upload-zone"><div className="upload-icon" aria-hidden="true">↑</div><div><strong>Upload a medical document</strong><p>PDF, JPG or PNG · up to 10 MB</p></div><button className="button dark" disabled={busy || loading || signInRequired} onClick={() => inputRef.current?.click()}>{busy ? "Uploading…" : "Choose file"}</button><input ref={inputRef} hidden type="file" accept="application/pdf,image/jpeg,image/png" aria-label="Select a medical document" onChange={(event) => { const file = event.target.files?.[0]; if (file) void upload(file); }} /></div>
       <div className="document-trust"><span>Access restricted to your account and authorized care team</span></div>
       {error && <div className="empty-state" role="alert">{error} {signInRequired ? <Link href="/login" className="button ghost">Sign in</Link> : <button className="button ghost" onClick={() => { setLoading(true); void load(); }}>Try again</button>}</div>}
-      <div className="document-list" aria-busy={loading}>{loading ? <p className="microcopy" role="status">Loading your documents…</p> : !error && (documents.length === 0 ? <p className="microcopy">No medical documents uploaded yet.</p> : documents.map((document) => <button className="document-item" key={document.id} disabled={opening !== null} onClick={() => void openDocument(document.id)}><div className="document-type">{document.contentType === "application/pdf" ? "PDF" : "IMG"}</div><div><strong>{document.originalFileName}</strong><span>{opening === document.id ? "Preparing document…" : `${Math.max(1, Math.round(document.sizeBytes / 1024))} KB · ${new Date(document.createdAt).toLocaleDateString()}`}</span></div></button>))}</div>
+      <div className="document-list" aria-busy={loading}>{loading ? <p className="microcopy" role="status">Loading your documents…</p> : !error && (documents.length === 0 ? <p className="microcopy">No medical documents uploaded yet.</p> : documents.map((document) => <button className="document-item" key={document.id} aria-label={`Open ${document.originalFileName}`} disabled={opening !== null} onClick={() => void openDocument(document.id)}><div className="document-type">{document.contentType === "application/pdf" ? "PDF" : "IMG"}</div><div><strong>{document.originalFileName}</strong><span>{opening === document.id ? "Preparing document…" : `${Math.max(1, Math.round(document.sizeBytes / 1024))} KB · ${new Date(document.createdAt).toLocaleDateString()}`}</span></div></button>))}</div>
       {message && <p className="microcopy" role="status">{message}</p>}
       {preview && <a className="button primary" style={{ display: "inline-block" }} href={preview.url} target="_blank" rel="noopener noreferrer">Open {preview.name} in a new tab</a>}
     </div>

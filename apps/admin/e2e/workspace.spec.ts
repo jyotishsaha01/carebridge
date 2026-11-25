@@ -39,5 +39,5 @@ test("clears a previous provider's credentials when switching providers", async 
   await expect(page.getByText("Alice license")).toBeVisible();
   await page.getByRole("button", { name: /Bob/ }).click();
   await expect(page.getByText("Alice license")).toHaveCount(0);
-  await expect(page.getByText("No credentials.")).toBeVisible();
+  await expect(page.getByText("No credentials submitted by this doctor yet.")).toBeVisible();
 });

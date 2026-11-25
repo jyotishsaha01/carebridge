@@ -112,9 +112,7 @@ async function main() {
         expertise: doctor.expertise,
         bio: doctor.bio,
         specialtyId: specialtyMap.get(doctor.specialty)!,
-        status: "VERIFIED",
-        isVerified: true,
-        isActive: true,
+        // Preserve existing doctor verification/activation decisions when re-running the seed.
       },
       create: {
         userId: user.id,
@@ -184,6 +182,19 @@ async function main() {
     where: { userId: patientUser.id },
     update: { firstName: "Demo", lastName: "Patient", country: "US" },
     create: { userId: patientUser.id, firstName: "Demo", lastName: "Patient", country: "US" },
+  });
+
+  // A second synthetic patient is reserved for cross-patient ownership regression tests.
+  const secondPatientEmail = "demo-patient-two@demo.carebridge.local";
+  const secondPatientUser = await prisma.user.upsert({
+    where: { email: secondPatientEmail },
+    update: { role: "PATIENT", passwordHash: hashPassword(DEMO_PASSWORD), emailVerifiedAt: new Date() },
+    create: { email: secondPatientEmail, role: "PATIENT", passwordHash: hashPassword(DEMO_PASSWORD), emailVerifiedAt: new Date() },
+  });
+  await prisma.patient.upsert({
+    where: { userId: secondPatientUser.id },
+    update: { firstName: "Demo", lastName: "Patient Two", country: "US" },
+    create: { userId: secondPatientUser.id, firstName: "Demo", lastName: "Patient Two", country: "US" },
   });
 
   console.log(`Seeded ${doctors.length} demo doctors and ${slotCount} availability slots.`);
