@@ -11,6 +11,9 @@ test("Back on a directly opened public page returns home", async ({ page }) => {
 test("Back follows account recovery and then provides a way home", async ({ page }) => {
   await page.goto("/login");
   await page.getByRole("link", { name: "Forgot password?", exact: true }).click();
+  // The layout's Back button persists while Next commits the destination page.
+  await expect(page).toHaveURL(/\/forgot-password$/);
+  await expect(page.getByRole("heading", { name: "Reset your password.", exact: true })).toBeVisible();
   const back = page.getByRole("navigation", { name: "Page navigation", exact: true }).getByRole("button", { name: "Back", exact: true });
   await back.click();
   await expect(page).toHaveURL(/\/login$/);
