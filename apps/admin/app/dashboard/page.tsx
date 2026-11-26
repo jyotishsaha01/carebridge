@@ -61,7 +61,7 @@ export default function AdminDashboard() {
     { label: "Verified doctors", value: overview.verifiedDoctors, href: "/operations#verified-doctors", hint: "View approved providers" },
     { label: "Appointments", value: overview.appointments, href: "/operations#appointments", hint: "Monitor bookings" },
     { label: "Active sessions", value: overview.openSessions, href: "/operations#sessions", hint: "Inspect signed-in accounts" },
-    { label: "Patient requests", value: overview.pendingCareRequests, href: "/operations#patient-requests", hint: "Review care requests" },
+    { label: "Open patient requests", value: overview.pendingCareRequests, href: "/analytics?requestStatus=OPEN#incoming-requests", hint: "Review open care requests" },
   ] : [];
 
   return <main style={{ minHeight: "100vh", background: "#f7f9fc", padding: "clamp(18px,4vw,44px) 22px", fontFamily: "Inter,system-ui,sans-serif", color: "#172334" }}>

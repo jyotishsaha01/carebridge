@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import CareRequestEditor, { careRequestStatusLabel } from "../../components/care-request-editor";
 import { getCurrentUser } from "../../lib/api";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
@@ -11,10 +12,8 @@ import {
   getDoctors,
   getPatients,
   reviewCredential,
-  updateCareRequestStatus,
   type AdminAppointment,
   type AdminCareRequest,
-  type AdminCareRequestStatus,
   type AdminCredential,
   type AdminDoctor,
   type AdminPatient,
@@ -36,7 +35,11 @@ export default function Operations() {
   const [busy, setBusy] = useState("");
   const selectedDoctorId=useRef("");
   const [credentialsLoading,setCredentialsLoading]=useState(false);
-  const [busyCareRequest, setBusyCareRequest] = useState("");
+  const [requestsRefreshing, setRequestsRefreshing] = useState(false);
+  const [requestsSaving, setRequestsSaving] = useState(false);
+  const savingRequests = useRef(new Set<string>());
+  const refreshingRequests = useRef(false);
+  const [requestFilter, setRequestFilter] = useState("ALL");
 
   const selectDoctor=useCallback(async(doctor:AdminDoctor)=>{
     selectedDoctorId.current=doctor.id;setSelected(doctor);setCredentials([]);setCredentialsLoading(true);setError("");
@@ -108,20 +111,25 @@ export default function Operations() {
     }
   }
 
-  async function changeCareRequestStatus(requestId: string, status: AdminCareRequestStatus) {
-    if(busyCareRequest)return;
-    setBusyCareRequest(requestId);
+  async function refreshCareRequests() {
+    if (refreshingRequests.current || savingRequests.current.size) return;
+    refreshingRequests.current = true;
+    setRequestsRefreshing(true);
     setError("");
-    setNotice("");
     try {
-      const updated = await updateCareRequestStatus(requestId, status);
-      setCareRequests((current) => current.map((item) => item.id === requestId ? updated : item));
-      setNotice("Patient care request updated to " + status.toLowerCase().replaceAll("_", " ") + ".");
+      setCareRequests(await getCareRequests());
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Unable to update patient care request.");
+      setError(e instanceof Error ? e.message : "Unable to refresh patient care requests.");
     } finally {
-      setBusyCareRequest("");
+      refreshingRequests.current = false;
+      setRequestsRefreshing(false);
     }
+  }
+
+  function requestSavingChanged(requestId: string, saving: boolean) {
+    if (saving) savingRequests.current.add(requestId);
+    else savingRequests.current.delete(requestId);
+    setRequestsSaving(savingRequests.current.size > 0);
   }
 
   function patientName(patient: Pick<AdminPatient, "firstName" | "lastName">) {
@@ -140,6 +148,7 @@ export default function Operations() {
         </nav>
         {error && <div role="alert" style={{ padding: 14, background: "#fff7ed", borderRadius: 12, color: "#9a3412" }}>{error}</div>}
         {notice && <div role="status" style={{ padding: 14, background: "#edf7f3", borderRadius: 12, color: "#17653f" }}>{notice}</div>}
+        {!loaded && !error && <p role="status">Loading operational details…</p>}
 
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 420px), 1fr))", gap: 20, marginTop: 26 }}>
           <section id="doctors" style={{ background: "white", border: "1px solid #e2e8f0", borderRadius: 22, padding: 22, scrollMarginTop: 24 }}>
@@ -177,13 +186,14 @@ export default function Operations() {
 
           <section id="patients" style={{ background: "white", border: "1px solid #e2e8f0", borderRadius: 22, padding: 22, scrollMarginTop: 24 }}>
             <h2>Patients</h2>
+            <p style={{ color: "#64748b", fontSize: 13 }}>Latest {patients.length} accounts shown, up to 100. Account details are limited to operational information.</p>
             {patients.map((patient) => (
               <div key={patient.id} style={{ padding: "12px 0", borderTop: "1px solid #eef2f7" }}>
                 <b>{patientName(patient)}</b>
                 <div style={{ fontSize: 13, color: "#64748b" }}>{patient.user.email} · {patient.country} · {patient.user.isEmailVerified ? "Email verified" : "Email pending"}</div>
               </div>
             ))}
-            {!patients.length && <p>No patients.</p>}
+            {loaded && !patients.length && <p>No patients.</p>}
           </section>
         </div>
 
@@ -194,12 +204,12 @@ export default function Operations() {
           </div>
           <p style={{ color: "#64748b", fontSize: 13 }}>These are the active verified provider profiles counted in the dashboard summary.</p>
           {doctors.filter((doctor) => doctor.isVerified && doctor.isActive).map((doctor) => (
-            <button key={doctor.id} disabled={Boolean(busy)} onClick={() => void selectDoctor(doctor)} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, width: "100%", textAlign: "left", padding: 14, border: 0, borderTop: "1px solid #eef2f7", background: selected?.id === doctor.id ? "#f0f7fc" : "white" }}>
+            <button key={doctor.id} disabled={Boolean(busy)} onClick={() => { void selectDoctor(doctor); document.getElementById("doctors")?.scrollIntoView({ behavior: "smooth", block: "start" }); }} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, width: "100%", textAlign: "left", padding: 14, border: 0, borderTop: "1px solid #eef2f7", background: selected?.id === doctor.id ? "#f0f7fc" : "white" }}>
               <span><b>{doctor.name}</b><span style={{ display: "block", marginTop: 4, color: "#718096", fontSize: 13 }}>{doctor.specialty.name} · {doctor.location}</span></span>
               <span style={{ color: "#1672b8", whiteSpace: "nowrap", fontSize: 13 }}>Inspect credentials →</span>
             </button>
           ))}
-          {!doctors.some((doctor) => doctor.isVerified && doctor.isActive) && <p>No active verified doctors.</p>}
+          {loaded && !doctors.some((doctor) => doctor.isVerified && doctor.isActive) && <p>No active verified doctors.</p>}
         </section>
 
         <section id="sessions" style={{ marginTop: 20, background: "white", border: "1px solid #e2e8f0", borderRadius: 22, padding: 22, scrollMarginTop: 24 }}>
@@ -207,7 +217,7 @@ export default function Operations() {
             <h2>Active account sessions</h2>
             <span style={{ color: "#64748b", fontSize: 13 }}>{sessions.length} shown</span>
           </div>
-          <p style={{ color: "#64748b", fontSize: 13 }}>Current authenticated sign-ins, ordered by most recent activity. Session tokens are never exposed here.</p>
+          <p style={{ color: "#64748b", fontSize: 13 }}>Up to 100 current authenticated sign-ins, ordered by most recent activity. Session tokens are never exposed here.</p>
           {sessions.map((session) => (
             <div key={session.id} style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(150px,1fr))", gap: 12, alignItems: "center", padding: "14px 0", borderTop: "1px solid #eef2f7" }}>
               <b>{session.user.email}</b>
@@ -216,33 +226,31 @@ export default function Operations() {
               <span style={{ color: "#64748b", fontSize: 13 }}>Expires: {new Date(session.expiresAt).toLocaleString()}</span>
             </div>
           ))}
-          {!sessions.length && <p>No active account sessions.</p>}
+          {loaded && !sessions.length && <p>No active account sessions.</p>}
         </section>
 
         <section id="patient-requests" style={{ marginTop: 20, background: "white", border: "1px solid #e2e8f0", borderRadius: 22, padding: 22, scrollMarginTop: 24 }}>
           <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "center", flexWrap: "wrap" }}><h2>Patient care requests</h2><span style={{ color: "#64748b", fontSize: 13 }}>{careRequests.filter((item) => item.status === "REQUESTED" || item.status === "REVIEWING").length} awaiting review</span></div>
-          <p style={{ color: "#64748b", fontSize: 13 }}>Review diagnostic, medication, procedure, surgery and coordination requests submitted by patients. Status updates notify the patient and are recorded in the audit log.</p>
-          {!careRequests.length ? <p>No patient care requests.</p> : careRequests.map((request) => (
-            <div key={request.id} style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(min(100%,280px),1fr))", gap: 16, padding: "16px 0", borderTop: "1px solid #eef2f7" }}>
-              <div>
-                <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}><b>{request.title}</b><span style={{ fontSize: 11, fontWeight: 800, color: "#1672b8" }}>{request.type}</span></div>
-                <div style={{ color: "#64748b", fontSize: 13, marginTop: 5 }}>{[request.patient.firstName, request.patient.lastName].filter(Boolean).join(" ") || "Patient"} · {request.patient.country} · Submitted {new Date(request.createdAt).toLocaleString()}</div>
-                {request.description && <p style={{ whiteSpace: "pre-wrap", margin: "8px 0", color: "#334155" }}>{request.description}</p>}
-                {request.country && <div style={{ color: "#64748b", fontSize: 13 }}>Requested care country: {request.country}</div>}
-                {request.targetDate && <div style={{ color: "#64748b", fontSize: 13, marginTop: 4 }}>Target date: {new Date(request.targetDate).toLocaleDateString()}</div>}
-              </div>
-              <label style={{ display: "grid", alignContent: "start", gap: 7, fontSize: 12, color: "#64748b", fontWeight: 700 }}>Request status
-                <select aria-label={"Update patient request " + request.title} disabled={Boolean(busyCareRequest)} value={request.status} onChange={(event) => void changeCareRequestStatus(request.id, event.target.value as AdminCareRequestStatus)} style={{ width: "100%", padding: 10, border: "1px solid #cbd5e1", borderRadius: 10, background: "white", color: "#172334" }}>
-                  <option value="REQUESTED">Requested</option><option value="REVIEWING">Reviewing</option><option value="APPROVED">Approved</option><option value="SCHEDULED">Scheduled</option><option value="COMPLETED">Completed</option><option value="CANCELLED">Cancelled / declined</option>
-                </select>
-                {busyCareRequest === request.id && <span>Saving status…</span>}
-              </label>
-            </div>
+          <p style={{ color: "#64748b", fontSize: 13 }}>Review the latest 100 patient requests. Choose a stage and save it to update the patient’s tracker. Changes are audited and generate a patient notification when enabled. These coordination stages do not automatically book appointments, assign doctors or change treatment.</p>
+          <div style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap", marginBottom: 16 }}>
+            <label>Show requests <select aria-label="Filter patient care requests" value={requestFilter} disabled={requestsSaving || requestsRefreshing} onChange={(event) => setRequestFilter(event.target.value)} style={{ padding: 8, marginLeft: 8 }}>
+              <option value="ALL">All stages</option><option value="OPEN">Open requests</option>
+              {["REQUESTED", "REVIEWING", "APPROVED", "SCHEDULED", "COMPLETED", "CANCELLED"].map((status) => <option key={status} value={status}>{status.charAt(0) + status.slice(1).toLowerCase()}</option>)}
+            </select></label>
+            <button type="button" disabled={!loaded || requestsSaving || requestsRefreshing} onClick={() => void refreshCareRequests()} style={{ padding: "8px 12px" }}>{requestsRefreshing ? "Refreshing…" : "Refresh latest requests"}</button>
+          </div>
+          {careRequests.filter((request) => requestFilter === "ALL" || (requestFilter === "OPEN" ? !["COMPLETED", "CANCELLED"].includes(request.status) : request.status === requestFilter)).map((request) => (
+            <CareRequestEditor key={request.id} request={request} disabled={requestsRefreshing} onSavingChange={requestSavingChanged} onSaved={(updated) => {
+              setCareRequests((current) => current.map((item) => item.id === updated.id ? updated : item));
+              setNotice(`Request ${updated.id} saved as ${careRequestStatusLabel(updated.status)}. The patient can see the saved stage in their care requests.`);
+            }} />
           ))}
+          {loaded && !careRequests.some((request) => requestFilter === "ALL" || (requestFilter === "OPEN" ? !["COMPLETED", "CANCELLED"].includes(request.status) : request.status === requestFilter)) && <p>No patient care requests in this selection.</p>}
         </section>
 
         <section id="appointments" style={{ marginTop: 20, background: "white", border: "1px solid #e2e8f0", borderRadius: 22, padding: 22, scrollMarginTop: 24 }}>
           <h2>Appointment operations</h2>
+          <p style={{ color: "#64748b", fontSize: 13 }}>Latest {appointments.length} appointments shown, up to 100. Appointment and consultation statuses are managed separately from patient care requests.</p>
           <div style={{ display: "grid", gap: 8 }}>
             {appointments.map((appointment) => (
               <div key={appointment.id} style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(150px,1fr))", gap: 12, padding: 13, borderTop: "1px solid #eef2f7" }}>
@@ -252,7 +260,7 @@ export default function Operations() {
                 <b>{appointment.consultation?.status ?? appointment.status}</b>
               </div>
             ))}
-            {!appointments.length && <p>No appointments.</p>}
+            {loaded && !appointments.length && <p>No appointments.</p>}
           </div>
         </section>
       </div>

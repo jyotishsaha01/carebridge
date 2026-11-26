@@ -13,6 +13,7 @@
     "db:setup": "pnpm --filter @carebridge/database db:setup",
     "db:reset": "pnpm --filter @carebridge/database db:reset",
     "uat:integration": "tsx src/uatSmoke.ts",
+    "uat:care-requests": "tsx src/uatCareRequests.ts",
     "uat:security": "tsx src/uatSecurity.ts",
     "uat:production": "tsx src/uatProduction.ts"
   },

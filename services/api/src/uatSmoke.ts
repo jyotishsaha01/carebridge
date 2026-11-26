@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { createHmac, randomUUID } from "node:crypto";
+import { exerciseCareRequests } from "./uatCareRequests";
 const API_URL = process.env.API_URL ?? "http://127.0.0.1:4000";
 const DEMO_PASSWORD = process.env.CAREBRIDGE_UAT_PASSWORD;
 if (!DEMO_PASSWORD) throw new Error("CAREBRIDGE_UAT_PASSWORD is required");
@@ -202,6 +203,7 @@ async function main() {
   const secondPatientCookie = await login("demo-patient-two@demo.carebridge.local");
   const doctorCookie = await login(accounts.doctor);
   const adminCookie = await login(accounts.admin);
+  await exerciseCareRequests({ patient: patientCookie, secondPatient: secondPatientCookie, doctor: doctorCookie, admin: adminCookie });
 
   // Confirm each synthetic credential resolves to the expected server-side role.
   for (const [cookie, expectedRole] of [
@@ -402,6 +404,6 @@ async function main() {
   r = await request("/v1/admin/appointments?limit=20", {}, adminCookie);
   assert.ok(r.body.some((a: any) => a.id === appointmentId));
   await exercisePayments(appointmentId, patientCookie);
-  console.log("CAREBRIDGE UAT PASS: clinical, support, document, notification and payment journeys with cross-patient isolation");
+  console.log("CAREBRIDGE UAT PASS: care requests, clinical, support, document, notification and payment journeys with cross-patient isolation");
 }
 main().catch((error) => { console.error("CAREBRIDGE UAT FAIL"); console.error(error); process.exit(1); });
