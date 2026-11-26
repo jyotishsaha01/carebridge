@@ -58,7 +58,7 @@ export default function PageNavigation() {
     <div className="page-navigation-inner">
       <button type="button" onClick={goBack}><span aria-hidden="true">←</span> Back</button>
       <div className="page-navigation-links">
-        {home && <a href={home}>Home</a>}
+        {pathname !== "/login" ? <Link href="/" aria-current={pathname === "/" ? "page" : undefined}>Home</Link> : home && <a href={home}>Home</a>}
         <Link href="/dashboard" aria-current={pathname === "/dashboard" ? "page" : undefined}>Dashboard</Link>
       </div>
     </div>

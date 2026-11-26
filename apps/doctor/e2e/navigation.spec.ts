@@ -31,3 +31,11 @@ test("login offers navigation on a narrow screen", async ({ page }) => {
   await expect(navigation.getByRole("link", { name: "Dashboard", exact: true })).toBeInViewport();
   await expect(navigation.getByRole("link", { name: "Home", exact: true })).toBeInViewport();
 });
+
+test("Home keeps an authenticated workspace inside its own portal", async ({ page }) => {
+  await page.goto("/dashboard");
+  const navigation = page.getByRole("navigation", { name: "Page navigation", exact: true });
+  await navigation.getByRole("link", { name: "Home", exact: true }).click();
+  await expect(page).toHaveURL("/");
+  await expect(page.getByRole("button", { name: "Sign out", exact: true })).toBeVisible();
+});
