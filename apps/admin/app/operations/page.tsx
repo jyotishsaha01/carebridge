@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { getCurrentUser } from "../../lib/api";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   getAppointments,
   getActiveSessions,
@@ -34,10 +34,20 @@ export default function Operations() {
   const [notice, setNotice] = useState("");
   const [doctorSearch, setDoctorSearch] = useState("");
   const [busy, setBusy] = useState("");
+  const selectedDoctorId=useRef("");
+  const [credentialsLoading,setCredentialsLoading]=useState(false);
   const [busyCareRequest, setBusyCareRequest] = useState("");
 
-  async function load() {
+  const selectDoctor=useCallback(async(doctor:AdminDoctor)=>{
+    selectedDoctorId.current=doctor.id;setSelected(doctor);setCredentials([]);setCredentialsLoading(true);setError("");
+    try { const rows=await getCredentials(doctor.id);if(selectedDoctorId.current===doctor.id)setCredentials(rows); }
+    catch(cause){if(selectedDoctorId.current===doctor.id)setError(cause instanceof Error?cause.message:"Unable to load credentials.");}
+    finally{if(selectedDoctorId.current===doctor.id)setCredentialsLoading(false);}
+  },[]);
+
+  const load=useCallback(async()=>{
     try {
+      setError("");
       const session = await getCurrentUser();
       if (session.user.role !== "ADMIN") throw new Error("Administrator access required.");
       const [d, p, a, s, requests] = await Promise.all([getDoctors(), getPatients(), getAppointments(), getActiveSessions(), getCareRequests()]);
@@ -53,30 +63,22 @@ export default function Operations() {
     } catch (e) {
       setError(e instanceof Error ? e.message : "Unable to load operations.");
     }
-  }
+  },[selectDoctor]);
 
   useEffect(() => {
     const timer = window.setTimeout(() => void load(), 0);
     return () => window.clearTimeout(timer);
-  }, []);
+  }, [load]);
 
   useEffect(() => {
     if (!loaded) return;
     const timer = window.setTimeout(() => {
-      const sectionId = decodeURIComponent(window.location.hash.slice(1));
+      let sectionId="";try{sectionId=decodeURIComponent(window.location.hash.slice(1));}catch{return;}
       if (sectionId) document.getElementById(sectionId)?.scrollIntoView({ behavior: "smooth", block: "start" });
     }, 80);
     return () => window.clearTimeout(timer);
   }, [loaded]);
 
-  async function selectDoctor(doctor: AdminDoctor) {
-    setSelected(doctor);
-    try {
-      setCredentials(await getCredentials(doctor.id));
-    } catch {
-      setError("Unable to load credentials.");
-    }
-  }
 
   async function review(id: string, status: "APPROVED" | "REJECTED" | "PENDING") {
     if (!selected) return;
@@ -87,6 +89,7 @@ export default function Operations() {
     try {
       await reviewCredential(id, status);
       const [latestDoctors, latestCredentials] = await Promise.all([getDoctors(), getCredentials(doctorId)]);
+      if(selectedDoctorId.current!==doctorId)return;
       const latestSelected = latestDoctors.find((doctor) => doctor.id === doctorId) ?? null;
       setDoctors(latestDoctors);
       setSelected(latestSelected);
@@ -106,6 +109,7 @@ export default function Operations() {
   }
 
   async function changeCareRequestStatus(requestId: string, status: AdminCareRequestStatus) {
+    if(busyCareRequest)return;
     setBusyCareRequest(requestId);
     setError("");
     setNotice("");
@@ -145,7 +149,7 @@ export default function Operations() {
             </div>
             <input aria-label="Search doctors" value={doctorSearch} onChange={(event) => setDoctorSearch(event.target.value)} placeholder="Search by doctor name or specialty" style={{ width: "100%", margin: "12px 0", padding: 12, border: "1px solid #cbd5e1", borderRadius: 12 }} />
             {doctors.filter((doctor) => (doctor.name + " " + doctor.specialty.name + " " + doctor.location).toLowerCase().includes(doctorSearch.trim().toLowerCase())).sort((a, b) => Number(!(a.pendingCredentials > 0 || !a.isVerified || !a.isActive)) - Number(!(b.pendingCredentials > 0 || !b.isVerified || !b.isActive))).map((doctor) => (
-              <button key={doctor.id} onClick={() => void selectDoctor(doctor)} style={{ display: "block", width: "100%", textAlign: "left", padding: 14, border: 0, borderTop: "1px solid #eef2f7", background: selected?.id === doctor.id ? "#f0f7fc" : "white" }}>
+              <button key={doctor.id} disabled={Boolean(busy)} onClick={() => void selectDoctor(doctor)} style={{ display: "block", width: "100%", textAlign: "left", padding: 14, border: 0, borderTop: "1px solid #eef2f7", background: selected?.id === doctor.id ? "#f0f7fc" : "white" }}>
                 <b>{doctor.name}</b>
                 <div style={{ color: "#718096" }}>{doctor.specialty.name} · {doctor.status} · {doctor.location}</div>
               </button>
@@ -154,7 +158,7 @@ export default function Operations() {
               <div style={{ marginTop: 18, padding: 18, borderRadius: 16, background: "#f8fafc" }}>
                 <h3>{selected.name} credentials</h3>
                 <p style={{ color: "#64748b", fontSize: 13 }}>Approve only after independently checking the license with the issuing authority. The onboarding form stores license details and a reference; it does not upload the actual license document.</p>
-                {credentials.length === 0 ? <p>No credentials submitted by this doctor yet.</p> : credentials.map((credential) => (
+                {credentialsLoading?<p role="status">Loading credentials…</p>:credentials.length === 0 ? <p>No credentials submitted by this doctor yet.</p> : credentials.map((credential) => (
                   <div key={credential.id} style={{ padding: "12px 0", borderTop: "1px solid #e2e8f0" }}>
                     <div style={{ display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}><b>{credential.type}</b><span style={{ fontSize: 12, fontWeight: 800, color: credential.status === "APPROVED" ? "#17653f" : credential.status === "REJECTED" ? "#a12c2c" : "#9a5b11" }}>{credential.status}</span></div>
                     <div style={{ fontSize: 13, color: "#64748b", marginTop: 6 }}>License: {credential.licenseNumber} · Issued by: {credential.jurisdiction}</div>
@@ -190,7 +194,7 @@ export default function Operations() {
           </div>
           <p style={{ color: "#64748b", fontSize: 13 }}>These are the active verified provider profiles counted in the dashboard summary.</p>
           {doctors.filter((doctor) => doctor.isVerified && doctor.isActive).map((doctor) => (
-            <button key={doctor.id} onClick={() => void selectDoctor(doctor)} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, width: "100%", textAlign: "left", padding: 14, border: 0, borderTop: "1px solid #eef2f7", background: selected?.id === doctor.id ? "#f0f7fc" : "white" }}>
+            <button key={doctor.id} disabled={Boolean(busy)} onClick={() => void selectDoctor(doctor)} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, width: "100%", textAlign: "left", padding: 14, border: 0, borderTop: "1px solid #eef2f7", background: selected?.id === doctor.id ? "#f0f7fc" : "white" }}>
               <span><b>{doctor.name}</b><span style={{ display: "block", marginTop: 4, color: "#718096", fontSize: 13 }}>{doctor.specialty.name} · {doctor.location}</span></span>
               <span style={{ color: "#1672b8", whiteSpace: "nowrap", fontSize: 13 }}>Inspect credentials →</span>
             </button>
@@ -205,7 +209,7 @@ export default function Operations() {
           </div>
           <p style={{ color: "#64748b", fontSize: 13 }}>Current authenticated sign-ins, ordered by most recent activity. Session tokens are never exposed here.</p>
           {sessions.map((session) => (
-            <div key={session.id} style={{ display: "grid", gridTemplateColumns: "1.3fr .6fr 1.2fr 1fr", gap: 12, alignItems: "center", padding: "14px 0", borderTop: "1px solid #eef2f7" }}>
+            <div key={session.id} style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(150px,1fr))", gap: 12, alignItems: "center", padding: "14px 0", borderTop: "1px solid #eef2f7" }}>
               <b>{session.user.email}</b>
               <span style={{ color: "#64748b" }}>{session.user.role}</span>
               <span style={{ color: "#64748b", fontSize: 13 }}>Last active: {new Date(session.lastSeenAt).toLocaleString()}</span>
@@ -219,7 +223,7 @@ export default function Operations() {
           <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "center", flexWrap: "wrap" }}><h2>Patient care requests</h2><span style={{ color: "#64748b", fontSize: 13 }}>{careRequests.filter((item) => item.status === "REQUESTED" || item.status === "REVIEWING").length} awaiting review</span></div>
           <p style={{ color: "#64748b", fontSize: 13 }}>Review diagnostic, medication, procedure, surgery and coordination requests submitted by patients. Status updates notify the patient and are recorded in the audit log.</p>
           {!careRequests.length ? <p>No patient care requests.</p> : careRequests.map((request) => (
-            <div key={request.id} style={{ display: "grid", gridTemplateColumns: "minmax(0,1.3fr) minmax(180px,.7fr)", gap: 16, padding: "16px 0", borderTop: "1px solid #eef2f7" }}>
+            <div key={request.id} style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(min(100%,280px),1fr))", gap: 16, padding: "16px 0", borderTop: "1px solid #eef2f7" }}>
               <div>
                 <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}><b>{request.title}</b><span style={{ fontSize: 11, fontWeight: 800, color: "#1672b8" }}>{request.type}</span></div>
                 <div style={{ color: "#64748b", fontSize: 13, marginTop: 5 }}>{[request.patient.firstName, request.patient.lastName].filter(Boolean).join(" ") || "Patient"} · {request.patient.country} · Submitted {new Date(request.createdAt).toLocaleString()}</div>
@@ -228,7 +232,7 @@ export default function Operations() {
                 {request.targetDate && <div style={{ color: "#64748b", fontSize: 13, marginTop: 4 }}>Target date: {new Date(request.targetDate).toLocaleDateString()}</div>}
               </div>
               <label style={{ display: "grid", alignContent: "start", gap: 7, fontSize: 12, color: "#64748b", fontWeight: 700 }}>Request status
-                <select aria-label={"Update patient request " + request.title} disabled={busyCareRequest === request.id} value={request.status} onChange={(event) => void changeCareRequestStatus(request.id, event.target.value as AdminCareRequestStatus)} style={{ width: "100%", padding: 10, border: "1px solid #cbd5e1", borderRadius: 10, background: "white", color: "#172334" }}>
+                <select aria-label={"Update patient request " + request.title} disabled={Boolean(busyCareRequest)} value={request.status} onChange={(event) => void changeCareRequestStatus(request.id, event.target.value as AdminCareRequestStatus)} style={{ width: "100%", padding: 10, border: "1px solid #cbd5e1", borderRadius: 10, background: "white", color: "#172334" }}>
                   <option value="REQUESTED">Requested</option><option value="REVIEWING">Reviewing</option><option value="APPROVED">Approved</option><option value="SCHEDULED">Scheduled</option><option value="COMPLETED">Completed</option><option value="CANCELLED">Cancelled / declined</option>
                 </select>
                 {busyCareRequest === request.id && <span>Saving status…</span>}
@@ -241,7 +245,7 @@ export default function Operations() {
           <h2>Appointment operations</h2>
           <div style={{ display: "grid", gap: 8 }}>
             {appointments.map((appointment) => (
-              <div key={appointment.id} style={{ display: "grid", gridTemplateColumns: "1.2fr 1.2fr 1fr 1fr", gap: 12, padding: 13, borderTop: "1px solid #eef2f7" }}>
+              <div key={appointment.id} style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(150px,1fr))", gap: 12, padding: 13, borderTop: "1px solid #eef2f7" }}>
                 <span>{patientName(appointment.patient)} · {appointment.patient.country}</span>
                 <span>{appointment.doctor.name} · {appointment.doctor.specialty.name}</span>
                 <span>{new Date(appointment.scheduledAt).toLocaleString()}</span>

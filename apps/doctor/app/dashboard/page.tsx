@@ -3,7 +3,8 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
+import { API_URL, apiFetch, jsonRequest } from "../../lib/request";
+import { captureSessionScope } from "../../lib/session-binding";
 type Appointment = {
   id: string;
   scheduledAt: string;
@@ -31,6 +32,7 @@ export default function DoctorDashboard() {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
   const [refreshKey, setRefreshKey] = useState(0);
+  const [cancelling,setCancelling]=useState(false);
   const upcomingCount = appointments.filter((appointment) => new Date(appointment.scheduledAt) >= new Date() && !["CANCELLED", "COMPLETED"].includes(appointment.status)).length;
   const inProgressCount = appointments.filter((appointment) => appointment.consultation?.status === "IN_PROGRESS").length;
   const completedCount = appointments.filter((appointment) => appointment.consultation?.status === "COMPLETED" || appointment.status === "COMPLETED").length;
@@ -41,29 +43,19 @@ export default function DoctorDashboard() {
 
     async function load() {
       try {
-        const [doctorResponse, appointmentResponse, slotResponse] = await Promise.all([
-          fetch(API_URL + "/v1/doctor/me", { credentials: "include" }),
-          fetch(API_URL + "/v1/doctor/appointments", { credentials: "include" }),
-          fetch(API_URL + "/v1/doctor/availability", { credentials: "include" }),
-        ]);
-        if ([doctorResponse, appointmentResponse, slotResponse].some((response) => !response.ok)) {
-          throw new Error("Sign in as a doctor to view your live workspace.");
-        }
-        const [doctorData, appointmentData, slotData] = await Promise.all([
-          doctorResponse.json() as Promise<Doctor>,
-          appointmentResponse.json() as Promise<Appointment[]>,
-          slotResponse.json() as Promise<Slot[]>,
+        const doctorData=await apiFetch<Doctor>("/v1/doctor/me");
+        if(cancelled)return;
+        setDoctor(doctorData);
+        const [appointmentData, slotData] = await Promise.all([
+          apiFetch<Appointment[]>("/v1/doctor/appointments"),apiFetch<Slot[]>("/v1/doctor/availability"),
         ]);
         if (cancelled) return;
         setDoctor(doctorData);
         setAppointments(Array.isArray(appointmentData) ? appointmentData : []);
         setAvailableSlots(Array.isArray(slotData) ? slotData.filter((slot) => slot.status === "AVAILABLE").length : 0);
 
-        const notificationResponse = await fetch(API_URL + "/v1/notifications?limit=1", { credentials: "include" });
-        if (notificationResponse.ok && !cancelled) {
-          const notifications = await notificationResponse.json();
-          setUnread(Number(notifications.unreadCount) || 0);
-        }
+        const notifications = await apiFetch<{unreadCount:number}>("/v1/notifications?limit=1").catch(()=>null);
+        if(notifications&&!cancelled)setUnread(Number(notifications.unreadCount)||0);
         if (!cancelled) {
           stream = new EventSource(API_URL + "/v1/notifications/stream", { withCredentials: true });
           stream.addEventListener("notification", () => setUnread((count) => count + 1));
@@ -83,33 +75,25 @@ export default function DoctorDashboard() {
   }, [refreshKey]);
 
   async function cancelAppointment(appointmentId: string) {
+    if(cancelling)return;
+    const scope=captureSessionScope();
     const reason = window.prompt("Enter a cancellation reason for the patient (3–1,000 characters):");
     if (reason === null) return;
     if (reason.trim().length < 3 || reason.trim().length > 1000) {
       setError("Cancellation reason must be between 3 and 1,000 characters.");
       return;
     }
-    setError("");
+    setError("");setCancelling(true);
     try {
-      const response = await fetch(API_URL + "/v1/doctor/appointments/" + encodeURIComponent(appointmentId) + "/cancel", {
-        method: "POST",
-        credentials: "include",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ reason: reason.trim() }),
-      });
-      const payload = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(payload.error ?? "Unable to cancel appointment.");
+      await apiFetch("/v1/doctor/appointments/"+encodeURIComponent(appointmentId)+"/cancel",{...jsonRequest("POST",{reason:reason.trim()}),sessionScope:scope});
       setAppointments((current) => current.map((appointment) =>
         appointment.id === appointmentId ? { ...appointment, status: "CANCELLED" } : appointment
       ));
-      const slotsResponse = await fetch(API_URL + "/v1/doctor/availability", { credentials: "include" });
-      if (slotsResponse.ok) {
-        const slots = await slotsResponse.json() as Slot[];
-        setAvailableSlots(Array.isArray(slots) ? slots.filter((slot) => slot.status === "AVAILABLE").length : 0);
-      }
+      const slots=await apiFetch<Slot[]>("/v1/doctor/availability",{sessionScope:scope});
+      setAvailableSlots(Array.isArray(slots)?slots.filter(slot=>slot.status==="AVAILABLE").length:0);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Unable to cancel appointment.");
-    }
+    } finally {setCancelling(false);}
   }
 
   const visible = useMemo(() => {
@@ -166,7 +150,7 @@ export default function DoctorDashboard() {
             <div style={{ display: "grid", gap: 10 }}>
               {visible.map((appointment) => <div key={appointment.id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 20, flexWrap: "wrap", padding: 17, border: "1px solid #e4ebf2", borderRadius: 16 }}>
                 <div><b>{patientName(appointment)}</b><div style={{ color: "#718398", marginTop: 4 }}>{new Date(appointment.scheduledAt).toLocaleString()} · {appointment.patient.country}</div><div style={{ color: "#718398", marginTop: 4 }}>Intake: {appointment.medicalIntake?.status ?? "Not started"}</div></div>
-                <div style={{ display: "flex", alignItems: "center", gap: 12 }}><span style={{ fontSize: 12, fontWeight: 800, color: "#58718b" }}>{appointment.consultation?.status ?? appointment.status}</span><Link href={"/?appointmentId=" + encodeURIComponent(appointment.id)} style={{ padding: "9px 12px", borderRadius: 10, background: "#1672b8", color: "white", textDecoration: "none", fontWeight: 700 }}>Open workspace</Link>{appointment.status === "BOOKED" && <button onClick={() => void cancelAppointment(appointment.id)} style={{ padding: "9px 12px", borderRadius: 10, border: "1px solid #e6b8b8", background: "#fff7f7", color: "#a12c2c", fontWeight: 700 }}>Cancel</button>}</div>
+                <div style={{ display: "flex", alignItems: "center", gap: 12 }}><span style={{ fontSize: 12, fontWeight: 800, color: "#58718b" }}>{appointment.consultation?.status ?? appointment.status}</span><Link href={"/?appointmentId=" + encodeURIComponent(appointment.id)} style={{ padding: "9px 12px", borderRadius: 10, background: "#1672b8", color: "white", textDecoration: "none", fontWeight: 700 }}>Open workspace</Link>{appointment.status === "BOOKED" && <button disabled={cancelling} onClick={() => void cancelAppointment(appointment.id)} style={{ padding: "9px 12px", borderRadius: 10, border: "1px solid #e6b8b8", background: "#fff7f7", color: "#a12c2c", fontWeight: 700 }}>Cancel</button>}</div>
               </div>)}
             </div>
           )}

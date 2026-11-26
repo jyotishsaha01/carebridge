@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import "./globals.css";
+import PrivateSession from "./private-session";
 
 export const metadata: Metadata = {
   title: "CareBridge — Global Healthcare. Trusted Care. Smarter Costs.",
@@ -9,7 +10,7 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
     <html lang="en">
-      <body>{children}</body>
+      <body><a className="skip-link" href="#main-content">Skip to main content</a><div id="main-content" tabIndex={-1}><PrivateSession>{children}</PrivateSession></div></body>
     </html>
   );
 }

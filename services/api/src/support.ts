@@ -6,8 +6,8 @@ import { prisma } from "./server";
 import { getAuthenticatedUser, requireRole } from "./auth";
 import { recordAudit } from "./audit";
 import { createNotification, notifyUsersByRole, type NotificationRole } from "./notificationsPrototype";
-import { MAX_DOCUMENT_BYTES } from "./storage";
-import { saveDocument, readDocument, deleteDocument } from "./documentStoragePrototype";
+import { MAX_DOCUMENT_BYTES, documentStorage } from "./storage";
+import { scanUploadedFile } from "./malwareScanner";
 
 const ticketInput = z.object({
   category: z.string().trim().min(2).max(80),
@@ -119,7 +119,7 @@ export async function registerSupportRoutes(app: FastifyInstance) {
     const parsed = z.object({
       fileName: z.string().trim().min(1).max(200),
       contentType: z.enum(["application/pdf", "image/png", "image/jpeg"]),
-      contentBase64: z.string().min(1),
+      contentBase64: z.string().min(1).max(4 * Math.ceil(5 * 1024 * 1024 / 3)),
     }).safeParse(request.body);
     if (!parsed.success) {
       return reply.code(400).send({
@@ -141,23 +141,29 @@ export async function registerSupportRoutes(app: FastifyInstance) {
       (input.contentType === "image/jpeg" && bytes.length >= 3 && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff);
     if (!validSignature) return reply.code(400).send({ error: "Attachment content does not match the declared file type" });
 
+    const scan = await scanUploadedFile({ content: bytes, contentType: input.contentType, fileName: input.fileName });
+    if (scan.status !== "clean") return reply.code(scan.status === "infected" ? 422 : 503).send({ error: scan.status === "infected" ? "Attachment was rejected by malware scanning" : "Attachment scanning is temporarily unavailable" });
     const safeName = input.fileName.replace(/[^a-zA-Z0-9._-]/g, "_").slice(0, 120) || "attachment";
     const storageKey = `support/${ticketId}/${randomUUID()}-${safeName}`;
+    let attachment;
     try {
-      await saveDocument({ storageKey, content: bytes, contentType: input.contentType });
-      const attachment = await prisma.supportAttachment.create({
-        data: { ticketId, uploadedBy: user.id, fileName: input.fileName, contentType: input.contentType, sizeBytes: bytes.length, storageKey },
-        select: { id: true, ticketId: true, uploadedBy: true, fileName: true, contentType: true, sizeBytes: true, createdAt: true },
+      await documentStorage.writeDocument({ storageKey, content: bytes, contentType: input.contentType });
+      attachment = await prisma.$transaction(async (tx) => {
+        const saved = await tx.supportAttachment.create({ data: { ticketId, uploadedBy: user.id, fileName: input.fileName, contentType: input.contentType, sizeBytes: bytes.length, storageKey }, select: { id: true, ticketId: true, uploadedBy: true, fileName: true, contentType: true, sizeBytes: true, createdAt: true } });
+        await recordAudit(request, { actorUserId: user.id, action: "SUPPORT_ATTACHMENT_UPLOADED", resourceType: "SupportAttachment", resourceId: saved.id, outcome: "SUCCESS", metadata: { ticketId, contentType: input.contentType, sizeBytes: bytes.length } }, tx);
+        await tx.supportTicket.update({ where: { id: ticketId }, data: { updatedAt: new Date() } });
+        return saved;
       });
-      await recordAudit(request, { actorUserId: user.id, action: "SUPPORT_ATTACHMENT_UPLOADED", resourceType: "SupportAttachment", resourceId: attachment.id, outcome: "SUCCESS", metadata: { ticketId, contentType: input.contentType, sizeBytes: bytes.length } });
-      await prisma.supportTicket.update({ where: { id: ticketId }, data: { updatedAt: new Date() } });
-      if (user.role !== "ADMIN") await notifyUsersByRole("ADMIN", "SUPPORT", "Support attachment uploaded", "A user attached a file to a support ticket.");
-      return reply.code(201).send(attachment);
     } catch (error) {
-      await deleteDocument(storageKey).catch(() => undefined);
-      request.log.error({ err: error, ticketId }, "Failed to store support attachment");
-      return reply.code(500).send({ error: "Support attachment could not be saved" });
+      await documentStorage.deleteDocument(storageKey).catch(() => undefined);
+      request.log.error({ resourceType: "SupportAttachment" }, "Support attachment storage or metadata commit failed");
+      if ((error as { statusCode?: number }).statusCode === 503) return reply.code(503).send({ error: "Encrypted attachment storage is not configured" });
+      throw error;
     }
+    try {
+      if (user.role !== "ADMIN") await notifyUsersByRole("ADMIN", "SUPPORT", "Support attachment uploaded", "A user attached a file to a support ticket.");
+    } catch { request.log.warn({ resourceType: "SupportAttachment" }, "Support attachment committed; notification delivery failed"); }
+    return reply.code(201).send(attachment);
   });
 
   app.get("/v1/support/tickets/:ticketId/attachments/:attachmentId/content", async (request, reply) => {
@@ -176,7 +182,7 @@ export async function registerSupportRoutes(app: FastifyInstance) {
     });
     if (!attachment) return reply.code(404).send({ error: "Support attachment not found" });
     try {
-      const bytes = await readDocument(attachment.storageKey);
+      const bytes = await documentStorage.readDocument(attachment.storageKey);
       await recordAudit(request, { actorUserId: user.id, action: "SUPPORT_ATTACHMENT_DOWNLOADED", resourceType: "SupportAttachment", resourceId: attachment.id, outcome: "SUCCESS" });
       return { attachment: { id: attachment.id, fileName: attachment.fileName, contentType: attachment.contentType, sizeBytes: attachment.sizeBytes }, contentBase64: bytes.toString("base64") };
     } catch {
@@ -208,7 +214,7 @@ export async function registerSupportRoutes(app: FastifyInstance) {
     return prisma.supportTicket.findMany({
       where,
       include: { user: { select: { id: true, email: true, role: true } } },
-      orderBy: [{ escalatedAt: "desc" }, { slaDueAt: "asc" }, { updatedAt: "desc" }],
+      orderBy: [{ escalatedAt: { sort: "desc", nulls: "last" } }, { slaDueAt: { sort: "asc", nulls: "last" } }, { updatedAt: "desc" }],
       take: query.limit,
     });
   });

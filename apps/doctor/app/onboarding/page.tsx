@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 
-const API = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
+import { apiFetch, jsonRequest } from "../../lib/request";
 const steps = ["Professional profile", "Credentials", "Review & submit"];
 
 export default function DoctorOnboarding() {
@@ -44,25 +44,9 @@ export default function DoctorOnboarding() {
 
     setSubmitting(true);
     try {
-      const response = await fetch(`${API}/v1/doctor/credentials`, {
-        method: "POST",
-        credentials: "include",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          type: "Medical license",
-          licenseNumber: license.trim(),
-          jurisdiction: jurisdiction.trim(),
-          // This is a document reference only, not an uploaded file.
-          documentName: doc.trim() || undefined,
-        }),
-      });
-      if (!response.ok) {
-        if (response.status === 401 || response.status === 403) {
-          throw new Error("Sign in with a doctor account to submit credentials.");
-        }
-        const payload = await response.json().catch(() => null);
-        throw new Error(payload?.message ?? payload?.error ?? "Unable to submit credential. Please try again.");
-      }
+      await apiFetch("/v1/doctor/credentials",jsonRequest("POST",{
+        type:"Medical license",licenseNumber:license.trim(),jurisdiction:jurisdiction.trim(),documentName:doc.trim()||undefined,
+      }));
       setSubmitted(true);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Submission failed.");
@@ -77,7 +61,7 @@ export default function DoctorOnboarding() {
         <p style={{ color: "#5f7891", fontWeight: 800, letterSpacing: ".12em", fontSize: 12, textTransform: "uppercase" }}>CareBridge · Doctor verification</p>
         <h1 style={{ fontSize: 40, margin: "8px 0" }}>Join the CareBridge clinical network</h1>
         <p style={{ color: "#64788d", fontSize: 17 }}>Submit your professional credential for admin review before providing care.</p>
-        <div aria-label="Onboarding progress" style={{ display: "flex", gap: 8, margin: "28px 0" }}>
+        <div aria-label="Onboarding progress" style={{ display: "flex", flexWrap:"wrap", gap: 8, margin: "28px 0" }}>
           {steps.map((label, index) => (
             <div key={label} aria-current={index === step ? "step" : undefined} style={{ flex: 1, padding: 13, borderRadius: 12, background: index <= step ? "#e7f4fb" : "#edf2f7", fontWeight: 700, color: index <= step ? "#1672b8" : "#718398" }}>
               {index + 1}. {label}
@@ -128,7 +112,7 @@ export default function DoctorOnboarding() {
             <div style={{ display: "flex", justifyContent: "space-between", marginTop: 28 }}>
               <button disabled={step === 0 || submitting} onClick={() => { setError(""); setStep((current) => Math.max(0, current - 1)); }} style={{ padding: "11px 16px", borderRadius: 12, border: "1px solid #cbd9e5", background: "white" }}>Back</button>
               {step < 2 ? (
-                <button onClick={continueToNextStep} style={{ padding: "11px 16px", borderRadius: 12, border: 0, background: "#1672b8", color: "white", fontWeight: 800 }}>Continue</button>
+                <button disabled={submitting} onClick={continueToNextStep} style={{ padding: "11px 16px", borderRadius: 12, border: 0, background: "#1672b8", color: "white", fontWeight: 800 }}>Continue</button>
               ) : (
                 <button disabled={submitting || !license.trim() || !jurisdiction.trim()} onClick={() => void submit()} style={{ padding: "11px 16px", borderRadius: 12, border: 0, background: "#1672b8", color: "white", fontWeight: 800, opacity: submitting ? 0.7 : 1 }}>
                   {submitting ? "Submitting…" : "Submit for verification"}

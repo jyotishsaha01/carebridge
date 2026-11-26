@@ -12,7 +12,7 @@ export async function registerPatientDashboardRoutes(app: FastifyInstance) {
     const [appointments, documents, consultations] = await Promise.all([
       prisma.appointment.findMany({
         where: { patientId, status: "BOOKED", scheduledAt: { gte: new Date() } },
-        include: { doctor: { include: { specialty: true } } },
+        include: { doctor: { select: { id: true, name: true, slug: true, specialty: { select: { name: true } } } } },
         orderBy: { scheduledAt: "asc" },
         take: 10,
       }),
@@ -24,7 +24,7 @@ export async function registerPatientDashboardRoutes(app: FastifyInstance) {
       }),
       prisma.consultation.findMany({
         where: { patientId },
-        include: { doctor: { include: { specialty: true } }, prescription: { include: { items: true } }, followUps: true },
+        include: { doctor: { select: { id: true, name: true, slug: true, specialty: { select: { name: true } } } }, prescription: { include: { items: true } }, followUps: true },
         orderBy: { createdAt: "desc" },
         take: 10,
       }),
@@ -59,7 +59,7 @@ export async function registerPatientDashboardRoutes(app: FastifyInstance) {
     const { id } = z.object({ id: z.string().min(1) }).parse(request.params);
     const appointment = await prisma.appointment.findFirst({
       where: { id, patientId: user.patient.id },
-      include: { doctor: { include: { specialty: true } }, medicalIntake: true, consultation: { include: { prescription: { include: { items: true } }, followUps: true } } },
+      include: { doctor: { select: { id: true, name: true, slug: true, specialty: { select: { name: true } } } }, medicalIntake: true, consultation: { include: { prescription: { include: { items: true } }, followUps: true } } },
     });
     if (!appointment) return reply.code(404).send({ error: "Appointment not found" });
     return appointment;

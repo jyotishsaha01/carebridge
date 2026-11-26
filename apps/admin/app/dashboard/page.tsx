@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { getCareRequests, getCurrentUser, getDoctors, getOverview, getSupportTickets, type AdminCareRequest, type AdminDoctor, type AdminSupportTicket, type Overview } from "../../lib/api";
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
+import { API_URL, apiFetch } from "../../lib/request";
 function Bell() { return <svg viewBox="0 0 24 24" width="21" height="21" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"><path d="M18 9a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9"/><path d="M10 21h4"/></svg>; }
 const panel = { background: "white", border: "1px solid #e2e8f0", borderRadius: 20, padding: 22 } as const;
 const muted = { color: "#718096" } as const;
@@ -29,17 +29,16 @@ export default function AdminDashboard() {
         try {
           const session = await getCurrentUser();
           if (session.user.role !== "ADMIN") throw new Error("Sign in with an admin account to view operations.");
-          const [counts, doctorRows, requestRows, ticketRows, notificationResponse] = await Promise.all([
+          const [counts, doctorRows, requestRows, ticketRows, notifications] = await Promise.all([
             getOverview(), getDoctors(), getCareRequests(), getSupportTickets(20),
-            fetch(API_URL + "/v1/notifications?limit=1", { credentials: "include", cache: "no-store" }),
+            apiFetch<{unreadCount:number}>("/v1/notifications?limit=1").catch(()=>null),
           ]);
           if (cancelled) return;
           setOverview(counts);
           setDoctors(doctorRows.filter((doctor) => doctor.pendingCredentials > 0 || !doctor.isVerified || !doctor.isActive));
           setCareRequests(requestRows.filter((item) => item.status === "REQUESTED" || item.status === "REVIEWING").slice(0, 6));
           setTickets(ticketRows.filter((ticket) => ticket.status === "OPEN" || ticket.status === "IN_PROGRESS").slice(0, 6));
-          if (notificationResponse.ok) {
-            const notifications = await notificationResponse.json();
+          if (notifications) {
             if (!cancelled) setUnread(Number(notifications.unreadCount) || 0);
           }
           if (!cancelled) {

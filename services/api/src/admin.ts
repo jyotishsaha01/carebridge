@@ -4,6 +4,7 @@ import { prisma } from "./server";
 import { requireRole } from "./auth";
 import { recordAudit } from "./audit";
 import { createNotification } from "./notificationsPrototype";
+import { DoctorStateError, withLockedDoctor } from "./doctorState";
 
 async function requireAdmin(request: FastifyRequest, reply: FastifyReply) {
   return requireRole(request, reply, ["ADMIN"]);
@@ -45,16 +46,25 @@ export async function registerAdminRoutes(app: FastifyInstance) {
     if (!user) return;
     const { doctorId } = z.object({ doctorId: z.string().min(1) }).parse(request.params);
     const { verified } = z.object({ verified: z.boolean() }).parse(request.body);
-    if (verified) {
-      const credentials = await prisma.doctorCredential.findMany({ where: { doctorId }, select: { status: true } });
-      if (credentials.length === 0 || credentials.some((credential) => credential.status !== "APPROVED")) {
-        return reply.code(409).send({ error: "Review and approve every submitted doctor credential before verifying this profile." });
+    let doctor;
+    try { doctor = await withLockedDoctor(doctorId, async (tx) => {
+      if (verified) {
+        const credentials = await tx.doctorCredential.findMany({ where: { doctorId }, select: { status: true } });
+        if (!credentials.length || credentials.some((credential) => credential.status !== "APPROVED")) return null;
       }
+      const updated = await tx.doctor.update({ where: { id: doctorId }, data: { isVerified: verified, isActive: verified, status: verified ? "VERIFIED" : "PENDING" }, select: { id: true, isVerified: true, isActive: true, status: true } });
+      await recordAudit(request, { actorUserId: user.id, action: "ADMIN_DOCTOR_VERIFICATION", resourceType: "Doctor", resourceId: doctorId, outcome: "SUCCESS", metadata: { verified } }, tx);
+      return updated;
+    });
+    } catch (error) {
+      if (error instanceof DoctorStateError) return reply.code(error.statusCode).send({ error: error.message });
+      throw error;
     }
-    const doctor = await prisma.doctor.update({ where: { id: doctorId }, data: { isVerified: verified, status: verified ? "VERIFIED" : "PENDING" }, select: { id: true, isVerified: true, status: true } });
-    const doctorUser = await prisma.user.findFirst({ where: { doctor: { id: doctorId } }, select: { id: true } });
-    if (doctorUser) await createNotification({ userId: doctorUser.id, role: "DOCTOR", type: "SYSTEM", title: verified ? "Doctor profile verified" : "Doctor verification changed", body: verified ? "Your CareBridge provider profile has been verified and is active." : "Your CareBridge provider verification status has changed. Review your profile for details." });
-    await recordAudit(request, { actorUserId: user.id, action: "ADMIN_DOCTOR_VERIFICATION", resourceType: "Doctor", resourceId: doctorId, outcome: "SUCCESS", metadata: { verified } });
+    if (!doctor) return reply.code(409).send({ error: "Review and approve every submitted doctor credential before verifying this profile." });
+    try {
+      const doctorUser = await prisma.user.findFirst({ where: { doctor: { id: doctorId } }, select: { id: true } });
+      if (doctorUser) await createNotification({ userId: doctorUser.id, role: "DOCTOR", type: "SYSTEM", title: verified ? "Doctor profile verified" : "Doctor verification changed", body: verified ? "Your CareBridge provider profile has been verified and is active." : "Your CareBridge provider verification status has changed. Review your profile for details." });
+    } catch { request.log.warn({ resourceType: "Doctor" }, "Verification committed; notification delivery failed"); }
     return doctor;
   });
 
@@ -70,43 +80,27 @@ export async function registerAdminRoutes(app: FastifyInstance) {
     if (!user) return;
     const { credentialId } = z.object({ credentialId: z.string().min(1) }).parse(request.params);
     const input = z.object({ status: z.enum(["PENDING", "APPROVED", "REJECTED"]) }).parse(request.body);
-    const result = await prisma.$transaction(async (tx) => {
-      const credential = await tx.doctorCredential.update({
-        where: { id: credentialId },
-        data: { status: input.status, reviewedAt: new Date(), reviewedByUserId: user.id },
-      });
-      const allCredentials = await tx.doctorCredential.findMany({ where: { doctorId: credential.doctorId }, select: { status: true } });
-      const allApproved = allCredentials.length > 0 && allCredentials.every((item) => item.status === "APPROVED");
-      const anyRejected = allCredentials.some((item) => item.status === "REJECTED");
-      const doctor = await tx.doctor.update({
-        where: { id: credential.doctorId },
-        data: { isVerified: allApproved, status: allApproved ? "VERIFIED" : anyRejected ? "REJECTED" : "PENDING" },
-        select: { id: true, name: true, userId: true, isVerified: true, status: true },
-      });
+    const reference = await prisma.doctorCredential.findUnique({ where: { id: credentialId }, select: { doctorId: true } });
+    if (!reference) return reply.code(404).send({ error: "Credential not found" });
+    let result;
+    try { result = await withLockedDoctor(reference.doctorId, async (tx) => {
+      const current = await tx.doctorCredential.findFirst({ where: { id: credentialId, doctorId: reference.doctorId } });
+      if (!current) throw new DoctorStateError(404, "Credential not found");
+      const credential = await tx.doctorCredential.update({ where: { id: credentialId }, data: { status: input.status, reviewedAt: new Date(), reviewedByUserId: user.id } });
+      const credentials = await tx.doctorCredential.findMany({ where: { doctorId: credential.doctorId }, select: { status: true } });
+      const allApproved = credentials.length > 0 && credentials.every((item) => item.status === "APPROVED");
+      const anyRejected = credentials.some((item) => item.status === "REJECTED");
+      const doctor = await tx.doctor.update({ where: { id: credential.doctorId }, data: { isVerified: allApproved, isActive: allApproved, status: allApproved ? "VERIFIED" : anyRejected ? "REJECTED" : "PENDING" }, select: { id: true, userId: true, isVerified: true } });
+      await recordAudit(request, { actorUserId: user.id, action: "ADMIN_CREDENTIAL_REVIEWED", resourceType: "DoctorCredential", resourceId: credential.id, outcome: "SUCCESS", metadata: { status: input.status, doctorId: doctor.id, doctorVerified: doctor.isVerified } }, tx);
       return { credential, doctor, allApproved };
     });
-    const notificationBody = input.status === "REJECTED"
-      ? "A submitted professional credential was rejected. Your profile remains hidden from patient search. Review your credential details and resubmit the corrected information."
-      : input.status === "PENDING"
-        ? "Your professional credential has been returned to pending review. Your profile will remain hidden until every required credential is approved."
-        : result.allApproved
-          ? "Your professional credentials have been approved and your verified doctor profile is now eligible to appear in patient search."
-          : "A professional credential was approved. Any other submitted credentials must also be approved before your profile appears in patient search.";
-    await createNotification({
-      userId: result.doctor.userId,
-      role: "DOCTOR",
-      type: "SYSTEM",
-      title: input.status === "REJECTED" ? "Doctor credential rejected" : input.status === "PENDING" ? "Doctor credential review reopened" : result.allApproved ? "Doctor profile verified" : "Doctor credential approved",
-      body: notificationBody,
-    });
-    await recordAudit(request, {
-      actorUserId: user.id,
-      action: "ADMIN_CREDENTIAL_REVIEWED",
-      resourceType: "DoctorCredential",
-      resourceId: result.credential.id,
-      outcome: "SUCCESS",
-      metadata: { status: input.status, doctorId: result.doctor.id, doctorVerified: result.doctor.isVerified },
-    });
+    } catch (error) {
+      if (error instanceof DoctorStateError) return reply.code(error.statusCode).send({ error: error.message });
+      throw error;
+    }
+    try {
+      await createNotification({ userId: result.doctor.userId, role: "DOCTOR", type: "SYSTEM", title: result.allApproved ? "Doctor profile verified" : input.status === "REJECTED" ? "Doctor credential rejected" : "Doctor credential review updated", body: result.allApproved ? "Your credentials are approved and your verified profile is active." : "Your profile remains hidden until every submitted credential is approved. Review your credential details." });
+    } catch { request.log.warn({ resourceType: "DoctorCredential" }, "Credential review committed; notification delivery failed"); }
     return result.credential;
   });
 

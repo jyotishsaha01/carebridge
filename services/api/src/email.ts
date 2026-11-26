@@ -15,10 +15,7 @@ export function createSecurityEmailProvider(): SecurityEmailProvider {
   return {
     async send(message) {
       if (process.env.NODE_ENV === "production") {
-        if (process.env.SECURITY_EMAIL_PROVIDER !== "configured") {
-          throw new Error("Security email provider is not configured");
-        }
-        return { delivered: false, provider: "configured-provider-not-wired" };
+        throw new Error("Security email provider is not configured");
       }
 
       return {

@@ -7,6 +7,10 @@ function hashPassword(password: string) {
   return `scrypt$16384$8$1$${salt.toString("base64url")}$${derived.toString("base64url")}`;
 }
 
+if (process.env.NODE_ENV === "production" || process.env.APP_ENV === "production") {
+  throw new Error("Synthetic demo accounts must never be seeded in production.");
+}
+
 const DEMO_PASSWORD = process.env.CAREBRIDGE_UAT_PASSWORD ?? "CareBridge-UAT-Local-Only-2026!";
 
 
@@ -153,7 +157,7 @@ async function main() {
         const endsAt = new Date(startsAt.getTime() + 30 * 60 * 1000);
         await prisma.availabilitySlot.upsert({
           where: { doctorId_startsAt: { doctorId: savedDoctor.id, startsAt } },
-          update: { endsAt, status: "AVAILABLE" },
+          update: { endsAt },
           create: { doctorId: savedDoctor.id, startsAt, endsAt, status: "AVAILABLE" },
         });
         slotCount += 1;

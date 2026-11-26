@@ -22,7 +22,8 @@ export async function registerVideoRoutes(app: FastifyInstance) {
 
     const now = new Date();
     const expiresAt = new Date(appointment.scheduledAt.getTime() + (appointment.durationMin + 30) * 60_000);
-    const providerConfigured = env.VIDEO_PROVIDER !== "unconfigured";
+    // No concrete provisioning adapter exists yet; a name in the environment is not a join credential.
+    const providerConfigured = false;
 
     return {
       appointmentId: appointment.id,

@@ -1,34 +1,27 @@
-# CareBridge local database
+# CareBridge databases
 
-CareBridge now uses SQLite + Prisma for local development, so the Patient, Doctor and Admin apps can run without an external database service.
-
-## Setup
-
-From the repository root:
+The canonical model is `prisma/schema.prisma`. SQLite is the local default. `DATABASE_URL=file:./dev.db` resolves against that schema; use an absolute `file:/...` path for isolated test databases.
 
 ```bash
-pnpm install
 pnpm db:setup
-```
-
-This creates `database/prisma/dev.db`, applies the Prisma schema, and seeds demo specialists, availability slots, and a demo patient.
-
-## Run the API
-
-```bash
-pnpm --filter @carebridge/api dev
-```
-
-The API defaults to port 4000 and uses the local SQLite database.
-
-## Reset local data
-
-```bash
+# Destructive, local only:
 pnpm db:reset
 ```
 
-This is development/demo data only. Do not put real patient information into the local database.
+Local commands generate the SQLite client, apply the schema with Prisma `db push`, and optionally seed synthetic data. Seeds are prohibited in production. Re-seeding does not make booked availability available again.
 
-## Later production migration
+## PostgreSQL
 
-Prisma remains the database abstraction, so the local SQLite implementation can later be migrated to PostgreSQL/cloud infrastructure after production security, privacy, HIPAA, backup, and deployment requirements are completed.
+`pnpm db:schema:prepare` generates `prisma/production/schema.prisma` from the canonical model, replacing only the database provider. Commit the generated schema with every model change. `pnpm db:schema:check` rejects drift. Always add/review a PostgreSQL migration for model changes; regeneration alone does not migrate a database.
+
+```bash
+pnpm db:generate:production
+# DATABASE_URL must point to PostgreSQL for these commands:
+pnpm db:deploy:production
+pnpm db:status:production
+pnpm db:drift:production
+```
+
+The production migrations live in `prisma/production/migrations`. The initial migration includes the complete model, including payment tables; requests never create tables at runtime. This migration is for a fresh database. Existing databases require a separately reviewed baseline and data migration. The older partial SQL files in `prisma/migrations` are historical and are not used by the production deployment commands.
+
+Prisma generates one active client per checkout. Run `pnpm db:generate` to return to SQLite after testing PostgreSQL. Deploy builds must generate the correct client explicitly. See the [production runbook](../docs/deployment/phase13-production-runbook.md).

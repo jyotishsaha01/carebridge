@@ -1,9 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { getSessions, revokeSession } from "../../lib/api";
+import { apiFetch, getSessions, revokeSession } from "../../lib/api";
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
 const notificationTypes = ["CONSULTATION", "PRESCRIPTION", "FOLLOW_UP", "CARE_PLAN", "DOCUMENT", "SUPPORT", "SYSTEM"];
 
 type Profile = {
@@ -18,7 +17,7 @@ type Profile = {
 
 export default function ProfilePage() {
   const [profile, setProfile] = useState<Profile | null>(null);
-  const [sessions, setSessions] = useState<any[]>([]);
+  const [sessions, setSessions] = useState<Awaited<ReturnType<typeof getSessions>>["sessions"]>([]);
   const [prefs, setPrefs] = useState<Record<string, boolean>>({});
   const [first, setFirst] = useState("");
   const [last, setLast] = useState("");
@@ -35,15 +34,17 @@ export default function ProfilePage() {
 
   useEffect(() => {
     let active = true;
+    const controller = new AbortController();
     async function load() {
       try {
-        const [sessionResult, profileResponse, preferencesResponse] = await Promise.all([
+        const [sessionResult, data, preferences] = await Promise.all([
           getSessions().catch(() => ({ sessions: [] })),
-          fetch(`${API_URL}/v1/patient/profile`, { credentials: "include", cache: "no-store" }),
-          fetch(`${API_URL}/v1/prototype/notification-preferences`, { credentials: "include", cache: "no-store" }),
+          apiFetch<Profile>("/v1/patient/profile", { signal: controller.signal }),
+          apiFetch<Array<{ type: string; enabled: boolean }>>("/v1/prototype/notification-preferences", { signal: controller.signal }).catch(() => {
+            if (active) setPreferenceError("Notification preferences could not be loaded. Please retry before changing them.");
+            return [];
+          }),
         ]);
-        if (!profileResponse.ok) throw new Error(profileResponse.status === 401 || profileResponse.status === 403 ? "Sign in to load your profile." : "Unable to load your profile.");
-        const data = (await profileResponse.json()) as Profile;
         if (!active) return;
         setProfile(data);
         setFirst(data.firstName ?? "");
@@ -53,12 +54,8 @@ export default function ProfilePage() {
         setEmergencyName(data.emergencyContactName ?? "");
         setEmergencyPhone(data.emergencyContactPhone ?? "");
         setSessions(sessionResult.sessions ?? []);
-        if (preferencesResponse.ok) {
-          const preferences = await preferencesResponse.json();
-          if (active && Array.isArray(preferences)) {
-            setPrefs(Object.fromEntries(preferences.map((item: { type: string; enabled: boolean }) => [item.type, item.enabled])));
-          }
-        }
+        if (Array.isArray(preferences)) setPrefs(Object.fromEntries(preferences.map((item) => [item.type, item.enabled])));
+
       } catch (cause) {
         if (active) setError(cause instanceof Error ? cause.message : "Unable to load your profile.");
       } finally {
@@ -66,21 +63,22 @@ export default function ProfilePage() {
       }
     }
     void load();
-    return () => { active = false; };
+    return () => { active = false; controller.abort(); };
   }, []);
 
   async function save() {
+    if (saving || !profile) return;
     setError("");
     setSaved(false);
-    if (first.trim().length > 120 || last.trim().length > 120 || emergencyName.trim().length > 120) {
-      setError("Names must be 120 characters or fewer.");
+    if (first.trim().length > 100 || last.trim().length > 100 || emergencyName.trim().length > 120) {
+      setError("First and last names must be 100 characters or fewer; emergency contact names must be 120 characters or fewer.");
       return;
     }
     if (phone.length > 30 || emergencyPhone.length > 30) {
       setError("Phone numbers must be 30 characters or fewer.");
       return;
     }
-    const phonePattern = /^[+0-9().\\s-]*$/;
+    const phonePattern = /^[+0-9().\s-]*$/;
     if ((phone.trim() && !phonePattern.test(phone.trim())) || (emergencyPhone.trim() && !phonePattern.test(emergencyPhone.trim()))) {
       setError("Phone numbers can contain digits, spaces, +, parentheses, hyphens, and periods only.");
       return;
@@ -89,27 +87,17 @@ export default function ProfilePage() {
       setError("Enter both the emergency contact name and phone number, or leave both blank.");
       return;
     }
-    if (emergencyPhone.trim() && emergencyPhone.replace(/\\D/g, "").length < 7) {
+    if (emergencyPhone.trim() && emergencyPhone.replace(/\D/g, "").length < 7) {
       setError("Enter a valid emergency contact phone number with at least 7 digits.");
       return;
     }
     setSaving(true);
     try {
-      const response = await fetch(`${API_URL}/v1/patient/profile`, {
-        method: "PATCH",
-        credentials: "include",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          firstName: first.trim() || null,
-          lastName: last.trim() || null,
-          country,
-          phone: phone.trim() || null,
-          emergencyContactName: emergencyName.trim() || null,
-          emergencyContactPhone: emergencyPhone.trim() || null,
-        }),
+      const savedProfile = await apiFetch<Profile>("/v1/patient/profile", {
+        method: "PATCH", headers: { "content-type": "application/json" },
+        body: JSON.stringify({ firstName: first.trim() || null, lastName: last.trim() || null, country, phone: phone.trim() || null, emergencyContactName: emergencyName.trim() || null, emergencyContactPhone: emergencyPhone.trim() || null }),
       });
-      if (!response.ok) throw new Error(response.status === 401 || response.status === 403 ? "Your session expired. Sign in and try again." : "Unable to save your profile. Check the fields and retry.");
-      setProfile(await response.json());
+      setProfile(savedProfile);
       setSaved(true);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Unable to save your profile.");
@@ -124,13 +112,9 @@ export default function ProfilePage() {
     setPreferenceError("");
     setPrefs((current) => ({ ...current, [type]: enabled }));
     try {
-      const response = await fetch(`${API_URL}/v1/prototype/notification-preferences/${encodeURIComponent(type)}`, {
-        method: "PATCH",
-        credentials: "include",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ enabled }),
+      await apiFetch(`/v1/prototype/notification-preferences/${encodeURIComponent(type)}`, {
+        method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ enabled }),
       });
-      if (!response.ok) throw new Error("Preference could not be saved. Please retry.");
     } catch (cause) {
       setPrefs((current) => ({ ...current, [type]: previous }));
       setPreferenceError(cause instanceof Error ? cause.message : "Preference could not be saved.");
@@ -153,8 +137,8 @@ export default function ProfilePage() {
         <section style={{ marginTop: 26, background: "white", border: "1px solid #e2e8f0", borderRadius: 24, padding: 26 }}>
           <h2>Personal information</h2>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(230px,1fr))", gap: 16 }}>
-            <label style={{ display: "grid", gap: 7, fontWeight: 700 }}>First name<input maxLength={120} value={first} onChange={(event) => { setFirst(event.target.value); setSaved(false); }} autoComplete="given-name" style={{ padding: 13, border: "1px solid #cbd5e1", borderRadius: 12 }} /></label>
-            <label style={{ display: "grid", gap: 7, fontWeight: 700 }}>Last name<input maxLength={120} value={last} onChange={(event) => { setLast(event.target.value); setSaved(false); }} autoComplete="family-name" style={{ padding: 13, border: "1px solid #cbd5e1", borderRadius: 12 }} /></label>
+            <label style={{ display: "grid", gap: 7, fontWeight: 700 }}>First name<input maxLength={100} disabled={!profile || saving} value={first} onChange={(event) => { setFirst(event.target.value); setSaved(false); }} autoComplete="given-name" style={{ padding: 13, border: "1px solid #cbd5e1", borderRadius: 12 }} /></label>
+            <label style={{ display: "grid", gap: 7, fontWeight: 700 }}>Last name<input maxLength={100} disabled={!profile || saving} value={last} onChange={(event) => { setLast(event.target.value); setSaved(false); }} autoComplete="family-name" style={{ padding: 13, border: "1px solid #cbd5e1", borderRadius: 12 }} /></label>
             <label style={{ display: "grid", gap: 7, fontWeight: 700 }}>Email<input value={profile?.user?.email ?? ""} readOnly aria-readonly="true" style={{ padding: 13, border: "1px solid #cbd5e1", borderRadius: 12, background: "#f8fafc" }} /></label>
             <label style={{ display: "grid", gap: 7, fontWeight: 700 }}>Country<select value={country} onChange={(event) => { setCountry(event.target.value); setSaved(false); }} style={{ padding: 13, border: "1px solid #cbd5e1", borderRadius: 12 }}><option value="US">United States</option><option value="IN">India</option><option value="GB">United Kingdom</option><option value="CA">Canada</option></select></label>
             <label style={{ display: "grid", gap: 7, fontWeight: 700 }}>Phone<input type="tel" maxLength={30} value={phone} onChange={(event) => { setPhone(event.target.value); setSaved(false); }} autoComplete="tel" placeholder="+1 555 0100" style={{ padding: 13, border: "1px solid #cbd5e1", borderRadius: 12 }} /></label>
@@ -181,11 +165,11 @@ export default function ProfilePage() {
           {notificationTypes.map((type) => (
             <label key={type} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, padding: "12px 0", borderTop: "1px solid #eef2f7" }}>
               <span>{type.replaceAll("_", " ")}</span>
-              <input type="checkbox" checked={prefs[type] !== false} disabled={busyPreference === type} onChange={(event) => void updatePreference(type, event.target.checked)} />
+              <input type="checkbox" checked={prefs[type] !== false} disabled={busyPreference !== "" || !profile} onChange={(event) => void updatePreference(type, event.target.checked)} />
             </label>
           ))}
         </section>
-        <button onClick={() => void save()} disabled={saving || loading} style={{ marginTop: 20, padding: "13px 20px", border: 0, borderRadius: 13, background: "#1672b8", color: "white", fontWeight: 800, opacity: saving ? 0.7 : 1 }}>{saving ? "Saving…" : "Save changes"}</button>
+        <button onClick={() => void save()} disabled={saving || loading || !profile} style={{ marginTop: 20, padding: "13px 20px", border: 0, borderRadius: 13, background: "#1672b8", color: "white", fontWeight: 800, opacity: saving ? 0.7 : 1 }}>{saving ? "Saving…" : "Save changes"}</button>
       </div>
     </main>
   );

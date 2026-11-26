@@ -7,9 +7,21 @@
     "lint": "pnpm -r lint",
     "typecheck": "pnpm -r typecheck",
     "test": "pnpm -r test",
-    "test:e2e": "pnpm -r test:e2e",
+    "test:e2e": "pnpm --workspace-concurrency=1 -r test:e2e",
     "build": "pnpm -r build",
     "db:setup": "pnpm --filter @carebridge/api db:setup",
-    "db:reset": "pnpm --filter @carebridge/api db:reset"
+    "db:reset": "pnpm --filter @carebridge/api db:reset",
+    "check": "pnpm db:schema:check && pnpm lint && pnpm typecheck && pnpm test && pnpm build",
+    "db:generate": "pnpm --filter @carebridge/database db:generate",
+    "db:schema:prepare": "node scripts/prepare-production-schema.mjs",
+    "db:schema:check": "node scripts/prepare-production-schema.mjs --check",
+    "db:generate:production": "pnpm --filter @carebridge/database db:generate:production",
+    "db:deploy:production": "pnpm --filter @carebridge/database db:deploy:production",
+    "db:status:production": "pnpm --filter @carebridge/database db:status:production",
+    "db:drift:production": "pnpm --filter @carebridge/database db:drift:production"
+  },
+  "engines": {
+    "node": ">=22 <25",
+    "pnpm": "10.15.0"
   }
 }

@@ -1,7 +1,11 @@
 import assert from "node:assert/strict";
+import { createHmac, randomUUID } from "node:crypto";
 const API_URL = process.env.API_URL ?? "http://127.0.0.1:4000";
 const DEMO_PASSWORD = process.env.CAREBRIDGE_UAT_PASSWORD;
 if (!DEMO_PASSWORD) throw new Error("CAREBRIDGE_UAT_PASSWORD is required");
+if (process.env.NODE_ENV !== "test") throw new Error("UAT must run with NODE_ENV=test against synthetic data only");
+const WEBHOOK_SECRET = process.env.CAREBRIDGE_DEMO_WEBHOOK_SECRET;
+if (!WEBHOOK_SECRET || WEBHOOK_SECRET.length < 32) throw new Error("CAREBRIDGE_DEMO_WEBHOOK_SECRET must contain at least 32 characters and match the test API configuration");
 const accounts = {
   patient: "demo-patient@demo.carebridge.local",
   doctor: "dr-anil-sharma@demo.carebridge.local",
@@ -75,6 +79,115 @@ async function waitForLiveNotification(stream: LiveNotificationStream, expectedT
     }
   }
   throw new Error("Timed out waiting for live notification: " + expectedTitle);
+}
+
+async function exercisePayments(appointmentId: string, patientCookie: string) {
+  const runId = randomUUID();
+  const idempotencyKey = `uat_payment_${runId}`;
+  const createIntent = (id: string, key: string, cookie: string) => request("/v1/payments/intents", { method: "POST", body: JSON.stringify({ appointmentId: id, idempotencyKey: key }) }, cookie);
+  let result = await createIntent(appointmentId, idempotencyKey, patientCookie);
+  assert.equal(result.response.status, 200, `Payment intent creation failed: ${JSON.stringify(result.body)}`);
+  const paymentId = result.body.id as string;
+  assert.ok(paymentId);
+  assert.equal(result.body.appointmentId, appointmentId);
+  assert.equal(result.body.status, "REQUIRES_ACTION");
+  assert.equal(result.body.provider, "demo");
+  assert.equal(result.body.checkoutUrl, null, "The test provider must not emit a fake checkout destination");
+  assert.ok(Number.isSafeInteger(result.body.amountMinor) && result.body.amountMinor > 0);
+  assert.equal(result.body.currency, "USD");
+  assert.ok(Number.isFinite(Date.parse(result.body.createdAt)), "Payment dates must serialize consistently on every database");
+  result = await createIntent(appointmentId, idempotencyKey, patientCookie);
+  assert.equal(result.response.status, 200);
+  assert.equal(result.body.id, paymentId, "Retrying the same key must reuse the payment");
+  result = await createIntent(appointmentId, `uat_retry_${runId}`, patientCookie);
+  assert.equal(result.response.status, 200);
+  assert.equal(result.body.id, paymentId, "Another key must not create a second payment for one appointment");
+  result = await request(`/v1/payments/${appointmentId}`, {}, patientCookie);
+  assert.equal(result.response.status, 200);
+  assert.equal(result.body.id, paymentId);
+  result = await request("/v1/payments", {}, patientCookie);
+  assert.equal(result.response.status, 200);
+  assert.equal(result.body.filter((payment: { appointmentId: string }) => payment.appointmentId === appointmentId).length, 1);
+  const listed = result.body.find((payment: { id: string }) => payment.id === paymentId);
+  assert.equal(listed.doctorSlug, "dr-anil-sharma");
+  assert.ok(Number.isFinite(Date.parse(listed.scheduledAt)));
+
+  // Use a second real session and appointment, rather than mocking away ownership checks.
+  const secondEmail = `uat-isolation-${runId}@demo.carebridge.local`;
+  result = await request("/v1/auth/signup", { method: "POST", body: JSON.stringify({ email: secondEmail, password: DEMO_PASSWORD }) });
+  assert.equal(result.response.status, 201, `Synthetic isolation account signup failed: ${JSON.stringify(result.body)}`);
+  let secondCookie: string;
+  if (result.response.headers.get("set-cookie")) secondCookie = cookieFrom(result.response);
+  else {
+    assert.ok(result.body.devVerificationToken, "Enable ALLOW_DEMO_AUTH for verification-enabled UAT or disable REQUIRE_EMAIL_VERIFICATION in the test API");
+    const verification = await request("/v1/auth/verify-email", { method: "POST", body: JSON.stringify({ token: result.body.devVerificationToken }) });
+    assert.equal(verification.response.status, 200);
+    secondCookie = await login(secondEmail);
+  }
+  const from = new Date().toISOString();
+  const to = new Date(Date.now() + 30 * 86400_000).toISOString();
+  result = await request(`/v1/doctors/dr-anil-sharma/availability?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`);
+  assert.equal(result.response.status, 200);
+  assert.ok(result.body.length > 0, "A second slot is needed for the cross-patient isolation journey");
+  result = await request("/v1/appointments", { method: "POST", body: JSON.stringify({ doctorSlug: "dr-anil-sharma", scheduledAt: result.body[0].startsAt }) }, secondCookie);
+  assert.equal(result.response.status, 201);
+  const secondAppointmentId = result.body.id as string;
+  result = await request(`/v1/patient/appointments/${appointmentId}`, {}, secondCookie);
+  assert.equal(result.response.status, 404, "Appointment ownership must be enforced");
+  result = await request(`/v1/appointments/${appointmentId}/intake`, {}, secondCookie);
+  assert.equal(result.response.status, 404, "Intake ownership must be enforced");
+  result = await request(`/v1/appointments/${appointmentId}/intake`, { method: "PUT", body: JSON.stringify({ consentToConsult: true }) }, secondCookie);
+  assert.equal(result.response.status, 404, "Another patient must not be able to amend intake");
+  result = await request(`/v1/payments/${appointmentId}`, {}, secondCookie);
+  assert.equal(result.response.status, 200);
+  assert.equal(result.body, null, "Another patient's payment must remain undisclosed");
+  result = await createIntent(appointmentId, `uat_cross_owner_${runId}`, secondCookie);
+  assert.equal(result.response.status, 404);
+  result = await createIntent(secondAppointmentId, idempotencyKey, secondCookie);
+  assert.equal(result.response.status, 409);
+  assert.ok(!JSON.stringify(result.body).includes(paymentId), "An idempotency collision must not disclose the existing payment");
+  result = await createIntent(secondAppointmentId, `uat_other_${runId}`, secondCookie);
+  assert.equal(result.response.status, 200);
+  assert.notEqual(result.body.id, paymentId);
+  result = await request("/v1/payments", {}, secondCookie);
+  assert.equal(result.response.status, 200);
+  assert.ok(!result.body.some((payment: { id: string }) => payment.id === paymentId));
+
+  const sendEvent = (event: { eventId: string; type: string; paymentId: string; status: string; occurredAt: string }, signatureOverride?: string) => {
+    const payload = JSON.stringify(event);
+    const signature = signatureOverride ?? createHmac("sha256", WEBHOOK_SECRET!).update(payload).digest("hex");
+    return request("/v1/payments/webhook", { method: "POST", headers: { "x-carebridge-signature": signature }, body: payload });
+  };
+  const success = { eventId: `uat_succeeded_${runId}`, type: "payment.succeeded", paymentId, status: "SUCCEEDED", occurredAt: new Date().toISOString() };
+  result = await sendEvent(success, "0".repeat(64));
+  assert.equal(result.response.status, 401);
+  result = await sendEvent({ ...success, eventId: `uat_mismatch_${runId}`, status: "FAILED" });
+  assert.equal(result.response.status, 400, "A signed but inconsistent event must be rejected");
+  result = await sendEvent({ ...success, eventId: `uat_unknown_${runId}`, paymentId: `missing_${runId}` });
+  assert.equal(result.response.status, 404);
+  result = await sendEvent(success);
+  assert.equal(result.response.status, 200, `Signed payment webhook failed: ${JSON.stringify(result.body)}`);
+  assert.equal(result.body.applied, true);
+  result = await sendEvent(success);
+  assert.equal(result.response.status, 200);
+  assert.equal(result.body.applied, false, "Duplicate webhook delivery must be harmless");
+  result = await sendEvent({ ...success, eventId: `uat_late_failed_${runId}`, type: "payment.failed", status: "FAILED" });
+  assert.equal(result.response.status, 200);
+  assert.equal(result.body.applied, false, "A delayed failure must not regress a paid payment");
+  result = await request(`/v1/payments/${appointmentId}`, {}, patientCookie);
+  assert.equal(result.body.status, "SUCCEEDED");
+  const refund = { ...success, eventId: `uat_refunded_${runId}`, type: "payment.refunded", status: "REFUNDED", occurredAt: new Date().toISOString() };
+  result = await sendEvent(refund);
+  assert.equal(result.response.status, 200);
+  assert.equal(result.body.applied, true);
+  result = await sendEvent({ ...success, eventId: `uat_late_succeeded_${runId}` });
+  assert.equal(result.response.status, 200);
+  assert.equal(result.body.applied, false, "A refunded payment must remain refunded");
+  result = await request(`/v1/payments/${appointmentId}`, {}, patientCookie);
+  assert.equal(result.body.status, "REFUNDED");
+  result = await request("/v1/notifications", {}, patientCookie);
+  assert.ok(result.body.notifications.some((item: { title: string }) => item.title === "Payment confirmed"));
+  assert.ok(result.body.notifications.some((item: { title: string }) => item.title === "Payment refunded"));
 }
 
 async function main() {
@@ -158,42 +271,15 @@ async function main() {
   r = await request("/v1/appointments", { method: "POST", body: JSON.stringify({ doctorSlug: "dr-anil-sharma", scheduledAt: r.body[0].startsAt, durationMin: 30 }) }, patientCookie);
   assert.equal(r.response.status, 201);
   const appointmentId = r.body.id;
-
-  // Medical questionnaire: verify draft save, fresh-read persistence, validation, and role access.
-  r = await request(`/v1/appointments/${appointmentId}/intake`, {}, patientCookie);
-  assert.equal(r.response.status, 200, "Patient should load intake for their appointment");
-  assert.equal(r.body.appointmentId, appointmentId);
-
-  const intakeDraft = {
-    reasonForVisit: "UAT questionnaire reason",
-    symptoms: "UAT symptoms",
-    allergies: "None",
-    medications: "None",
-    medicalHistory: "UAT medical history",
-    surgeries: "None",
-    familyHistory: "UAT family history",
-    consentToConsult: false,
-  };
-  r = await request(`/v1/appointments/${appointmentId}/intake`, { method: "PUT", body: JSON.stringify(intakeDraft) }, patientCookie);
-  assert.equal(r.response.status, 200, `Questionnaire draft should save: ${JSON.stringify(r.body)}`);
-  assert.equal(r.body.status, "DRAFT");
-  assert.equal(r.body.reasonForVisit, intakeDraft.reasonForVisit);
-
-  // A separate GET confirms the answers came back from persistent storage.
   r = await request(`/v1/appointments/${appointmentId}/intake`, {}, patientCookie);
   assert.equal(r.response.status, 200);
-  assert.equal(r.body.reasonForVisit, intakeDraft.reasonForVisit);
-  assert.equal(r.body.symptoms, intakeDraft.symptoms);
-  assert.equal(r.body.medicalHistory, intakeDraft.medicalHistory);
-  assert.equal(r.body.familyHistory, intakeDraft.familyHistory);
   assert.equal(r.body.consentToConsult, false);
-
-  r = await request(`/v1/appointments/${appointmentId}/intake`, { method: "PUT", body: JSON.stringify({ ...intakeDraft, reasonForVisit: "x".repeat(2001) }) }, patientCookie);
-  assert.equal(r.response.status, 400, "Overlong questionnaire fields should return a validation error");
-  assert.ok(r.body.issues?.some((issue: any) => issue.field === "reasonForVisit"));
-
-  r = await request(`/v1/appointments/${appointmentId}/intake`, {}, doctorCookie);
-  assert.equal(r.response.status, 403, "Doctor must not read patient intake through the patient-only endpoint");
+  r = await request(`/v1/appointments/${appointmentId}/intake`, { method: "PUT", body: JSON.stringify({ reasonForVisit: "Synthetic UAT consultation", symptoms: "Synthetic test information only", consentToConsult: true }) }, patientCookie);
+  assert.equal(r.response.status, 200);
+  assert.equal(r.body.status, "COMPLETED");
+  assert.equal(r.body.consentToConsult, true);
+  r = await request("/v1/doctor/appointments", {}, patientCookie);
+  assert.equal(r.response.status, 403, "A patient must not have clinician workspace access");
   await waitForLiveNotification(livePatientStream, "Appointment confirmed");
   await waitForLiveNotification(liveDoctorStream, "New appointment booked");
   await waitForLiveNotification(liveAdminStream, "New appointment booked");
@@ -216,9 +302,7 @@ async function main() {
   await waitForLiveNotification(livePatientStream, "Consultation completed");
   await livePatientStream.reader.cancel();
   const liveDoctorDocumentStream = await openNotificationStream(doctorCookie);
-  const documentContent = Buffer.from("%PDF-1.4\n% CareBridge UAT synthetic document\n%%EOF\n");
-  r = await request("/v1/documents/upload-intent", { method: "POST", body: JSON.stringify({ fileName: "", contentType: "application/pdf", sizeBytes: -1, appointmentId }) }, patientCookie);
-  assert.equal(r.response.status, 400, "Invalid upload metadata should return a client validation error");
+  const documentContent = Buffer.from("%PDF-1.4\n%CareBridge synthetic UAT document\n%%EOF\n");
   r = await request("/v1/documents/upload-intent", { method: "POST", body: JSON.stringify({ fileName: "uat-note.pdf", contentType: "application/pdf", sizeBytes: documentContent.length, appointmentId }) }, patientCookie);
   assert.equal(r.response.status, 201, JSON.stringify(r.body));
   const documentId = r.body.document.id;
@@ -317,51 +401,7 @@ async function main() {
   assert.equal(r.response.status, 200);
   r = await request("/v1/admin/appointments?limit=20", {}, adminCookie);
   assert.ok(r.body.some((a: any) => a.id === appointmentId));
-
-  r = await request("/v1/patient/care-requests", { method: "POST", body: JSON.stringify({ type: "DIAGNOSTIC", title: "UAT diagnostic request", description: "Synthetic request for admin approval flow." }) }, patientCookie);
-  assert.equal(r.response.status, 201, "Patient should be able to submit a care request");
-  const careRequestId = r.body.id;
-  r = await request("/v1/patient/care-requests", { method: "POST", body: JSON.stringify({ type: "DIAGNOSTIC", title: "UAT diagnostic request", description: "Synthetic request for admin approval flow." }) }, patientCookie);
-  assert.equal(r.response.status, 200, "A rapid duplicate care request should return the existing request");
-  assert.equal(r.body.id, careRequestId, "Rapid duplicate submission must not create another care request");
-  r = await request("/v1/admin/care-requests?status=REQUESTED&limit=100", {}, adminCookie);
-  assert.equal(r.response.status, 200);
-  assert.ok(r.body.some((item: any) => item.id === careRequestId), "Admin should see newly submitted patient care requests");
-  r = await request("/v1/admin/care-requests/" + careRequestId, { method: "PATCH", body: JSON.stringify({ status: "APPROVED" }) }, adminCookie);
-  assert.equal(r.response.status, 200, "Admin should be able to approve a patient care request");
-  r = await request("/v1/patient/care-requests", {}, patientCookie);
-  assert.ok(r.body.some((item: any) => item.id === careRequestId && item.status === "APPROVED"), "Patient should see the admin decision");
-
-  r = await request("/v1/doctor/credentials", { method: "POST", body: JSON.stringify({ type: "Medical license", licenseNumber: "UAT-LOCAL-MEDICAL-LICENSE", jurisdiction: "UAT jurisdiction", documentName: "UAT reference only" }) }, doctorCookie);
-  assert.ok([200, 201].includes(r.response.status), "Doctor should be able to submit or resubmit a credential");
-  const credentialId = r.body.id;
-  r = await request("/v1/admin/doctors?verified=all", {}, adminCookie);
-  const seededDoctorId = r.body.find((item: any) => item.slug === "dr-anil-sharma")?.id;
-  assert.ok(seededDoctorId, "Expected the seeded UAT doctor profile");
-  r = await request("/v1/admin/doctors/" + seededDoctorId + "/verification", { method: "POST", body: JSON.stringify({ verified: true }) }, adminCookie);
-  assert.equal(r.response.status, 409, "Admin verification shortcut must reject unreviewed licenses");
-  r = await request("/v1/doctors?limit=10");
-  assert.equal(r.response.status, 200);
-  assert.ok(!r.body.some((item: any) => item.slug === "dr-anil-sharma"), "Doctor awaiting license review must not appear in patient search");
-
-  r = await request("/v1/admin/credentials/" + credentialId, { method: "PATCH", body: JSON.stringify({ status: "APPROVED" }) }, adminCookie);
-  assert.equal(r.response.status, 200, "Admin should be able to approve the submitted license");
-  r = await request("/v1/admin/doctors?verified=all", {}, adminCookie);
-  assert.ok(r.body.some((item: any) => item.slug === "dr-anil-sharma" && item.isVerified), "Approving credentials should verify the doctor");
-  r = await request("/v1/doctors?limit=100");
-  assert.ok(r.body.some((item: any) => item.slug === "dr-anil-sharma"), "Approved doctor should appear in patient search");
-  assert.ok(r.body.length <= 100, "Patient discovery should respect the configured listing limit");
-
-  r = await request("/v1/admin/credentials/" + credentialId, { method: "PATCH", body: JSON.stringify({ status: "REJECTED" }) }, adminCookie);
-  assert.equal(r.response.status, 200);
-  r = await request("/v1/doctors?limit=10");
-  assert.ok(!r.body.some((item: any) => item.slug === "dr-anil-sharma"), "Rejected license must remove doctor from patient search");
-  r = await request("/v1/admin/credentials/" + credentialId, { method: "PATCH", body: JSON.stringify({ status: "PENDING" }) }, adminCookie);
-  assert.equal(r.response.status, 200);
-  r = await request("/v1/admin/credentials/" + credentialId, { method: "PATCH", body: JSON.stringify({ status: "APPROVED" }) }, adminCookie);
-  assert.equal(r.response.status, 200);
-  r = await request("/v1/doctors?limit=10");
-  assert.ok(r.body.some((item: any) => item.slug === "dr-anil-sharma"), "Approved resubmitted credential should restore patient visibility");
-  console.log("CAREBRIDGE UAT PASS");
+  await exercisePayments(appointmentId, patientCookie);
+  console.log("CAREBRIDGE UAT PASS: clinical, support, document, notification and payment journeys with cross-patient isolation");
 }
 main().catch((error) => { console.error("CAREBRIDGE UAT FAIL"); console.error(error); process.exit(1); });

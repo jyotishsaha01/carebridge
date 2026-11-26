@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useEffect, useState } from "react";
 
-const API = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
+import { apiFetch, getAvailability } from "../../../lib/api";
 
 type AvailabilitySlot = { id: string; startsAt: string; endsAt: string; timezone?: string };
 
@@ -32,23 +32,17 @@ export default function AppointmentPage() {
 
   useEffect(() => {
     let active = true;
+    const controller = new AbortController();
     async function load() {
       try {
-        const response = await fetch(`${API}/v1/patient/appointments/${encodeURIComponent(id)}`, {
-          credentials: "include",
-          cache: "no-store",
-        });
-        if (!response.ok) throw new Error(response.status === 401 || response.status === 403
-          ? "Sign in to view this appointment."
-          : "This appointment could not be loaded. Check the appointment link and try again.");
-        const appointment = (await response.json()) as Appointment;
+        const appointment = await apiFetch<Appointment>(`/v1/patient/appointments/${encodeURIComponent(id)}`, { signal: controller.signal });
         if (active) setData(appointment);
       } catch (cause) {
         if (active) setError(cause instanceof Error ? cause.message : "This appointment could not be loaded.");
       }
     }
     if (id) void load();
-    return () => { active = false; };
+    return () => { active = false; controller.abort(); };
   }, [id]);
 
   useEffect(() => {
@@ -69,19 +63,9 @@ export default function AppointmentPage() {
 
       setSlotsLoading(true);
       setActionError("");
-      const from = new Date().toISOString();
-      const to = new Date(Date.now() + 60 * 24 * 60 * 60 * 1000).toISOString();
-      const url = API + "/v1/doctors/" + encodeURIComponent(data.doctor.slug) +
-        "/availability?from=" + encodeURIComponent(from) + "&to=" + encodeURIComponent(to);
-
-      void fetch(url, { credentials: "include", cache: "no-store" })
-        .then(async (response) => {
-          const payload = await response.json().catch(() => null);
-          if (!response.ok) {
-            throw new Error(typeof payload?.error === "string" ? payload.error : "Unable to load available times.");
-          }
-          return payload as AvailabilitySlot[];
-        })
+      const from = new Date();
+      const to = new Date(Date.now() + 60 * 24 * 60 * 60 * 1000);
+      void getAvailability(data.doctor.slug, from, to)
         .then((slots) => {
           if (!active) return;
           const usable = slots.filter((slot) =>
@@ -104,7 +88,7 @@ export default function AppointmentPage() {
       active = false;
       window.clearTimeout(timer);
     };
-  }, [data?.id, data?.status, data?.scheduledAt, data?.durationMin, data?.doctor.slug, data?.consultation?.status]);
+  }, [data]);
 
   async function cancelAppointment() {
     if (!data || actionPending) return;
@@ -112,14 +96,10 @@ export default function AppointmentPage() {
     setActionError("");
     setActionMessage("");
     try {
-      const response = await fetch(API + "/v1/patient/appointments/" + encodeURIComponent(data.id) + "/cancel", {
-        method: "POST",
-        credentials: "include",
-        headers: { "content-type": "application/json" },
+      await apiFetch(`/v1/patient/appointments/${encodeURIComponent(data.id)}/cancel`, {
+        method: "POST", headers: { "content-type": "application/json" },
         body: JSON.stringify({ reason: cancelReason.trim() || undefined }),
       });
-      const payload = await response.json().catch(() => null);
-      if (!response.ok) throw new Error(typeof payload?.error === "string" ? payload.error : "Unable to cancel this appointment.");
       setData((current) => current ? {
         ...current,
         status: "CANCELLED",
@@ -146,14 +126,10 @@ export default function AppointmentPage() {
     setActionError("");
     setActionMessage("");
     try {
-      const response = await fetch(API + "/v1/patient/appointments/" + encodeURIComponent(data.id) + "/reschedule", {
-        method: "PUT",
-        credentials: "include",
-        headers: { "content-type": "application/json" },
+      const payload = await apiFetch<{ scheduledAt: string; status: string }>(`/v1/patient/appointments/${encodeURIComponent(data.id)}/reschedule`, {
+        method: "PUT", headers: { "content-type": "application/json" },
         body: JSON.stringify({ scheduledAt: selectedSlot }),
       });
-      const payload = await response.json().catch(() => null);
-      if (!response.ok) throw new Error(typeof payload?.error === "string" ? payload.error : "Unable to reschedule this appointment.");
       setData((current) => current ? {
         ...current,
         scheduledAt: payload.scheduledAt,
@@ -171,7 +147,7 @@ export default function AppointmentPage() {
   if (!data) return <main style={{ maxWidth: 850, margin: "auto", padding: 48, fontFamily: "system-ui" }} role="status">Loading appointment…</main>;
 
   const consultation = data.consultation;
-  const intakeComplete = data.medicalIntake?.status === "COMPLETED" || data.medicalIntake?.consentToConsult === true;
+  const intakeComplete = data.medicalIntake?.status === "COMPLETED" && data.medicalIntake?.consentToConsult === true;
   const canManageAppointment = data.status === "BOOKED" && new Date(data.scheduledAt) > new Date() && (!consultation || !["IN_PROGRESS", "COMPLETED", "CANCELLED"].includes(consultation.status));
 
   return (

@@ -32,3 +32,18 @@ textarea { min-height: 92px; resize: vertical; }
 .button.warning { background: #eadfcd; color: #654b1c; }
 .note { margin-top: 14px; padding: 12px 14px; border-left: 3px solid #8cb6aa; background: #f5f9f7; color: #53635e; font-size: 13px; line-height: 1.45; }
 @media (max-width: 900px) { .grid { grid-template-columns: 1fr; } }
+
+:focus-visible { outline: 3px solid #2788cb; outline-offset: 3px; }
+button:disabled { cursor: not-allowed; opacity: .6; }
+.session-state { min-height:100vh; padding:48px 24px; background:#f6f9fc; color:#142235; }
+.session-state a { color:#1267a3; }
+.workspace-session-bar { display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:12px; padding:12px 24px; background:#102e29; color:white; }
+.workspace-session-bar a { color:inherit; text-decoration:none; font-size:14px; font-weight:700; }
+.workspace-session-bar button { border:1px solid #8cb6aa; border-radius:8px; padding:8px 14px; background:transparent; color:white; }
+.session-message { margin:0; padding:14px 24px; background:#fff0ee; color:#a42720; }
+.workspace-columns { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:20px; }
+.workspace-metrics { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:14px; }
+@media(max-width:700px) { .workspace-columns { grid-template-columns:1fr; } }
+.clinical-fields { border:0; margin:22px 0 0; padding:0; min-width:0; }
+.clinical-fields legend { font-size:17px; font-weight:700; margin-bottom:12px; }
+.documentLink { display:block; width:100%; margin:8px 0; text-align:left; border:1px solid #cedbd5; border-radius:10px; padding:12px; background:#f5f9f7; color:#20483e; overflow-wrap:anywhere; }

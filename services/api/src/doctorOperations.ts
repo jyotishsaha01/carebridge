@@ -1,8 +1,9 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { z } from "zod";
 import { prisma } from "./server";
-import { requireRole } from "./auth";
+import { requireRole, requireVerifiedDoctor } from "./auth";
 import { recordAudit } from "./audit";
+import { DoctorStateError, withLockedDoctor } from "./doctorState";
 import { notifyUsersByRole, createNotification } from "./notificationsPrototype";
 
 const slotInput = z.object({ startsAt: z.coerce.date(), endsAt: z.coerce.date() }).refine((v) => v.endsAt > v.startsAt, { message: "endsAt must be after startsAt" });
@@ -26,20 +27,29 @@ export async function registerDoctorOperationsRoutes(app: FastifyInstance) {
   });
 
   app.get("/v1/doctor/availability", async (request, reply) => {
-    const user = await requireRole(request, reply, ["DOCTOR"]);
+    const user = await requireVerifiedDoctor(request, reply);
     if (!user?.doctor) return;
     const query = z.object({ from: z.coerce.date().optional(), to: z.coerce.date().optional() }).parse(request.query);
     return prisma.availabilitySlot.findMany({ where: { doctorId: user.doctor.id, startsAt: query.from ? { gte: query.from, ...(query.to ? { lte: query.to } : {}) } : undefined }, orderBy: { startsAt: "asc" }, take: 200 });
   });
 
   app.post("/v1/doctor/availability", async (request, reply) => {
-    const user = await requireRole(request, reply, ["DOCTOR"]);
+    const user = await requireVerifiedDoctor(request, reply);
     if (!user?.doctor) return;
     const input = slotInput.parse(request.body);
     if (input.startsAt <= new Date()) return reply.code(400).send({ error: "Availability must be in the future" });
-    const overlap = await prisma.availabilitySlot.findFirst({ where: { doctorId: user.doctor.id, startsAt: { lt: input.endsAt }, endsAt: { gt: input.startsAt } } });
-    if (overlap) return reply.code(409).send({ error: "Availability overlaps an existing slot" });
-    const slot = await prisma.availabilitySlot.create({ data: { doctorId: user.doctor.id, startsAt: input.startsAt, endsAt: input.endsAt, status: "AVAILABLE" } });
+    let slot;
+    try {
+      slot = await prisma.$transaction(async (tx) => {
+        const overlap = await tx.availabilitySlot.findFirst({ where: { doctorId: user.doctor!.id, startsAt: { lt: input.endsAt }, endsAt: { gt: input.startsAt } } });
+        if (overlap) return null;
+        return tx.availabilitySlot.create({ data: { doctorId: user.doctor!.id, startsAt: input.startsAt, endsAt: input.endsAt, status: "AVAILABLE" } });
+      }, { isolationLevel: "Serializable" });
+    } catch (error) {
+      if (["P2002", "P2034"].includes((error as { code?: string }).code ?? "")) return reply.code(409).send({ error: "Availability changed while saving. Refresh and try again." });
+      throw error;
+    }
+    if (!slot) return reply.code(409).send({ error: "Availability overlaps an existing slot" });
     await recordAudit(request, { actorUserId: user.id, action: "DOCTOR_AVAILABILITY_CREATED", resourceType: "AvailabilitySlot", resourceId: slot.id, outcome: "SUCCESS" });
     return reply.code(201).send(slot);
   });
@@ -59,33 +69,35 @@ export async function registerDoctorOperationsRoutes(app: FastifyInstance) {
       jurisdiction: z.string().trim().min(2).max(120),
       documentName: z.string().trim().max(200).optional(),
     }).parse(request.body);
-    const existing = await prisma.doctorCredential.findFirst({
-      where: { doctorId: user.doctor.id, type: input.type, licenseNumber: input.licenseNumber, jurisdiction: input.jurisdiction },
-      orderBy: { createdAt: "desc" },
-    });
-    const credential = await prisma.$transaction(async (tx) => {
-      const saved = existing
-        ? await tx.doctorCredential.update({
-            where: { id: existing.id },
-            data: { documentName: input.documentName ?? existing.documentName, status: "PENDING", reviewedAt: null, reviewedByUserId: null },
-          })
-        : await tx.doctorCredential.create({ data: { doctorId: user.doctor!.id, ...input } });
-      await tx.doctor.update({ where: { id: user.doctor!.id }, data: { isVerified: false, status: "PENDING" } });
-      return saved;
-    });
-    await notifyUsersByRole("ADMIN", "DOCUMENT", "Doctor credential submitted", `${user.doctor.name ?? "A doctor"} submitted a credential for review.`);
-    await recordAudit(request, { actorUserId: user.id, action: "DOCTOR_CREDENTIAL_SUBMITTED", resourceType: "DoctorCredential", resourceId: credential.id, outcome: "SUCCESS", metadata: { resubmitted: Boolean(existing) } });
-    return reply.code(existing ? 200 : 201).send(credential);
+    let result;
+    try {
+      result = await withLockedDoctor(user.doctor.id, async (tx) => {
+        const existing = await tx.doctorCredential.findFirst({ where: { doctorId: user.doctor!.id, type: input.type, licenseNumber: input.licenseNumber, jurisdiction: input.jurisdiction }, orderBy: { createdAt: "desc" } });
+        const credential = existing
+          ? await tx.doctorCredential.update({ where: { id: existing.id }, data: { documentName: input.documentName ?? existing.documentName, status: "PENDING", reviewedAt: null, reviewedByUserId: null } })
+          : await tx.doctorCredential.create({ data: { doctorId: user.doctor!.id, ...input } });
+        await tx.doctor.update({ where: { id: user.doctor!.id }, data: { isVerified: false, isActive: false, status: "PENDING" } });
+        await recordAudit(request, { actorUserId: user.id, action: "DOCTOR_CREDENTIAL_SUBMITTED", resourceType: "DoctorCredential", resourceId: credential.id, outcome: "SUCCESS", metadata: { resubmitted: Boolean(existing) } }, tx);
+        return { credential, resubmitted: Boolean(existing) };
+      });
+    } catch (error) {
+      if (error instanceof DoctorStateError) return reply.code(error.statusCode).send({ error: error.message });
+      throw error;
+    }
+    try { await notifyUsersByRole("ADMIN", "DOCUMENT", "Doctor credential submitted", `${user.doctor.name ?? "A doctor"} submitted a credential for review.`); }
+    catch { request.log.warn({ resourceType: "DoctorCredential" }, "Credential submission committed; notification delivery failed"); }
+    return reply.code(result.resubmitted ? 200 : 201).send(result.credential);
   });
 
   app.delete("/v1/doctor/availability/:slotId", async (request, reply) => {
-    const user = await requireRole(request, reply, ["DOCTOR"]);
+    const user = await requireVerifiedDoctor(request, reply);
     if (!user?.doctor) return;
     const { slotId } = z.object({ slotId: z.string().min(1) }).parse(request.params);
     const slot = await prisma.availabilitySlot.findFirst({ where: { id: slotId, doctorId: user.doctor.id } });
     if (!slot) return reply.code(404).send({ error: "Availability slot not found" });
     if (slot.status !== "AVAILABLE") return reply.code(409).send({ error: "Booked slots cannot be removed" });
-    await prisma.availabilitySlot.delete({ where: { id: slot.id } });
+    const deleted = await prisma.availabilitySlot.deleteMany({ where: { id: slot.id, doctorId: user.doctor.id, status: "AVAILABLE" } });
+    if (deleted.count !== 1) return reply.code(409).send({ error: "Availability changed while removing it. Refresh and try again." });
     await recordAudit(request, { actorUserId: user.id, action: "DOCTOR_AVAILABILITY_DELETED", resourceType: "AvailabilitySlot", resourceId: slot.id, outcome: "SUCCESS" });
     return { ok: true };
   });

@@ -1,18 +1,12 @@
 export type AuthUser = { id: string; email: string; role: "PATIENT" | "DOCTOR" | "ADMIN" };
-const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
-async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(`${API_URL}${path}`, { ...init, cache: "no-store", credentials: "include" });
-  if (!response.ok) {
-    const body = await response.json().catch(() => null) as { error?: string } | null;
-    throw new Error(body?.error ?? `Admin API request failed: ${response.status}`);
-  }
-  return response.json() as Promise<T>;
+import { apiFetch } from "./request";
+import { bindSession } from "./session-binding";
+export async function signIn(email:string,password:string,signal?:AbortSignal) {
+  const result=await apiFetch<{user:AuthUser}>("/v1/auth/login",{method:"POST",signal,headers:{"content-type":"application/json"},body:JSON.stringify({email,password})});
+  bindSession(result.user.id,result.user.role);return result;
 }
-export function signIn(email: string, password: string) {
-  return apiFetch<{ user: AuthUser }>("/v1/auth/login", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ email, password }) });
-}
-export function getCurrentUser() { return apiFetch<{ user: AuthUser }>("/v1/auth/me"); }
-export function signOut() { return apiFetch<{ ok: true }>("/v1/auth/logout", { method: "POST" }); }
+export function getCurrentUser(){return apiFetch<{user:AuthUser}>("/v1/auth/me");}
+export function signOut(){return apiFetch<{ok:true}>("/v1/auth/logout",{method:"POST"});}
 
 export type Overview = { patients: number; doctors: number; verifiedDoctors: number; appointments: number; openSessions: number; pendingCareRequests: number };
 export type AdminDoctor = { id: string; name: string; slug: string; location: string; status: string; isVerified: boolean; isActive: boolean; pendingCredentials: number; specialty: { name: string } };

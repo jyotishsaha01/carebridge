@@ -1,3 +1,5 @@
+import { createHmac, timingSafeEqual } from "node:crypto";
+
 export type PaymentStatus = "PENDING" | "REQUIRES_ACTION" | "SUCCEEDED" | "FAILED" | "CANCELLED" | "REFUNDED";
 
 export type PaymentIntent = {
@@ -33,19 +35,27 @@ export interface PaymentProvider {
 /** Local/test provider. It never handles real card data and is safe for synthetic environments. */
 export class FakePaymentProvider implements PaymentProvider {
   async createPaymentIntent(input: CreatePaymentInput): Promise<PaymentIntent> {
+    if (process.env.NODE_ENV === "production") throw new Error("A production payment provider is required");
     return {
       id: `demo_pi_${input.idempotencyKey}`,
       appointmentId: input.appointmentId,
       amountMinor: input.amountMinor,
       currency: input.currency.toUpperCase(),
       status: "REQUIRES_ACTION",
-      checkoutUrl: `http://localhost:3000/payments/demo/${encodeURIComponent(input.idempotencyKey)}`,
     };
   }
 
   verifyWebhookSignature(payload: string, signature: string): boolean {
-    return signature === `demo:${payload.length}`;
+    const secret = process.env.CAREBRIDGE_DEMO_WEBHOOK_SECRET;
+    if (process.env.NODE_ENV === "production" || !secret || secret.length < 32 || !/^[a-f0-9]{64}$/i.test(signature)) return false;
+    const expected = createHmac("sha256", secret).update(payload).digest();
+    return timingSafeEqual(Buffer.from(signature, "hex"), expected);
   }
+}
+
+export function canTransitionPayment(current: string, next: PaymentStatus): boolean {
+  if (current === "PENDING" || current === "REQUIRES_ACTION") return ["SUCCEEDED", "FAILED", "CANCELLED"].includes(next);
+  return current === "SUCCEEDED" && next === "REFUNDED";
 }
 
 /** Server-side state machine: webhook status is authoritative and duplicate events are ignored. */

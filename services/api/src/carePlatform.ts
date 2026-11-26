@@ -1,7 +1,7 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { z } from "zod";
 import { prisma } from "./server";
-import { getAuthenticatedUser, requireRole } from "./auth";
+import { requireVerifiedDoctor, requireRole } from "./auth";
 import { recordAudit } from "./audit";
 import { createNotification, notifyUsersByRole } from "./notificationsPrototype";
 
@@ -87,6 +87,12 @@ export async function registerCarePlatformRoutes(app: FastifyInstance) {
     const user = await requireRole(request, reply, ["ADMIN", "DOCTOR"]);
     if (!user) return;
     const input = z.object({ patientId: z.string().min(1), title: z.string().trim().min(3).max(160), description: z.string().trim().max(2000).optional(), coordinatorNote: z.string().trim().max(4000).optional(), tasks: z.array(z.object({ title: z.string().trim().min(2).max(160), description: z.string().trim().max(1000).optional(), dueAt: z.coerce.date().optional() })).max(50).default([]) }).parse(request.body);
+    if (user.role === "DOCTOR") {
+      const doctor = await requireVerifiedDoctor(request, reply);
+      if (!doctor?.doctor) return;
+      const relationship = await prisma.appointment.findFirst({ where: { doctorId: doctor.doctor.id, patientId: input.patientId, status: { not: "CANCELLED" } }, select: { id: true } });
+      if (!relationship) return reply.code(403).send({ error: "Doctor is not authorized for this patient" });
+    }
     const plan = await prisma.carePlan.create({ data: { patientId: input.patientId, title: input.title, description: input.description, coordinatorNote: input.coordinatorNote, status: "ACTIVE", tasks: { create: input.tasks } }, include: { tasks: true } });
     const patient = await prisma.patient.findUnique({ where: { id: input.patientId }, select: { userId: true } });
     if (patient) await createNotification({ userId: patient.userId, role: "PATIENT", type: "CARE_PLAN", title: "Your care plan is ready", body: `A new care plan, “${plan.title}”, is available in your CareBridge dashboard.` });

@@ -3,10 +3,8 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
-import { getCurrentUser, signOut, type AuthUser } from "../../lib/api";
+import { API_URL, apiFetch, signOut, type AuthUser } from "../../lib/api";
 import styles from "./dashboard.module.css";
-
-const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
 
 function BellIcon() {
   return (
@@ -30,49 +28,26 @@ export default function DashboardPage() {
   const [signingOut, setSigningOut] = useState(false);
 
   useEffect(() => {
+    const controller = new AbortController();
     let stream: EventSource | null = null;
-    let cancelled = false;
-
-    const timer = window.setTimeout(() => {
-      void getCurrentUser()
-        .then(async (response) => {
-          if (cancelled) return;
-          setUser(response.user);
-          const [dashboard, notifications] = await Promise.all([
-            fetch(`${API_URL}/v1/patient/dashboard`, { credentials: "include", cache: "no-store" }),
-            fetch(`${API_URL}/v1/notifications?limit=1`, { credentials: "include", cache: "no-store" }),
-          ]);
-          if (cancelled) return;
-
-          if (dashboard.ok) {
-            const dashboardData: DashboardData = await dashboard.json();
-            if (cancelled) return;
-            setData(dashboardData);
-          }
-          if (notifications.ok) {
-            const notificationData: NotificationData = await notifications.json();
-            if (cancelled) return;
-            setUnread(notificationData.unreadCount);
-          }
-          if (cancelled) return;
-          stream = new EventSource(API_URL + "/v1/notifications/stream", { withCredentials: true });
-          stream.addEventListener("notification", () => {
-            if (!cancelled) setUnread((count) => count + 1);
-          });
-        })
-        .catch((err) => {
-          if (!cancelled) setError(err instanceof Error ? err.message : "Please sign in to view your dashboard.");
-        })
-        .finally(() => {
-          if (!cancelled) setLoading(false);
-        });
-    }, 0);
-
-    return () => {
-      cancelled = true;
-      window.clearTimeout(timer);
-      stream?.close();
-    };
+    apiFetch<{ user: AuthUser }>("/v1/auth/me", { signal: controller.signal }).then(async (response) => {
+      if (controller.signal.aborted) return;
+      if (response.user.role !== "PATIENT") throw new Error("Please use your patient account to access this workspace.");
+      setUser(response.user);
+      const [dashboard, notifications] = await Promise.allSettled([
+        apiFetch<DashboardData>("/v1/patient/dashboard", { signal: controller.signal }),
+        apiFetch<NotificationData>("/v1/notifications?limit=1", { signal: controller.signal }),
+      ]);
+      if (controller.signal.aborted) return;
+      if (dashboard.status === "rejected") throw dashboard.reason;
+      setData(dashboard.value);
+      if (notifications.status === "fulfilled") setUnread(notifications.value.unreadCount);
+      stream = new EventSource(API_URL + "/v1/notifications/stream", { withCredentials: true });
+      stream.addEventListener("notification", () => {
+        void apiFetch<NotificationData>("/v1/notifications?limit=1", { signal: controller.signal }).then((result) => { if (!controller.signal.aborted) setUnread(result.unreadCount); }).catch(() => { /* The persisted count is retained until reconnection. */ });
+      });
+    }).catch((err) => { if (!controller.signal.aborted) setError(err instanceof Error ? err.message : "Please sign in to view your dashboard."); }).finally(() => { if (!controller.signal.aborted) setLoading(false); });
+    return () => { controller.abort(); stream?.close(); };
   }, []);
 
   async function logout() { setSigningOut(true); try { await signOut(); router.push("/"); } catch { setSigningOut(false); setError("We could not end the session. Please try again."); } }
@@ -80,6 +55,8 @@ export default function DashboardPage() {
   if (loading) return <main className={styles.shell}><div className={styles.loadingCard}><span className={styles.spinner} />Preparing your CareBridge dashboard…</div></main>;
   if (!user) return <main className={styles.shell}><section className={styles.emptyCard}><span className={styles.mark}>C</span><div className="eyebrow">PATIENT SPACE</div><h1>Your care, organized.</h1><p>Sign in to access your personalized CareBridge dashboard, consultations and medical records.</p>{error && <div className={styles.error} role="alert">{error}</div>}<Link className="button primary" href="/login">Sign in to CareBridge</Link><Link className={styles.backLink} href="/">← Back to specialists</Link></section></main>;
 
-  const nextAppointment = data?.appointments.find((item) => new Date(item.scheduledAt) >= new Date());
-  return <main className={styles.shell}><div className={styles.ambient} /><header className={styles.topbar}><Link className="brand" href="/dashboard" aria-label="CareBridge patient dashboard"><span className="brand-mark">C</span><span>CareBridge</span></Link><nav aria-label="Patient navigation"><Link href="/">Find specialists</Link><Link href="/care">Care hub</Link><Link href="/documents">Documents</Link><Link href="/records">Records</Link><Link href="/profile">Profile</Link><Link href="/notifications" className={styles.notificationBell} aria-label={unread > 0 ? `Notifications, ${unread} unread` : "Notifications"} title="Notifications"><BellIcon />{unread > 0 && <span className={styles.notificationBadge}>{unread > 99 ? "99+" : unread}</span>}</Link><button onClick={logout} disabled={signingOut}>{signingOut ? "Signing out…" : "Sign out"}</button></nav></header><section className={styles.hero}><div><div className="eyebrow">YOUR CAREBRIDGE SPACE</div><h1>Good to see you.</h1><p>Everything you need for your care journey, brought together in one secure place.</p></div><div className={styles.profileCard}><div className={styles.avatar}>{user.email.slice(0,1).toUpperCase()}</div><div><span>Signed in as</span><strong>{user.email}</strong><small>{user.role === "PATIENT" ? "Patient account" : `${user.role} account`}</small></div></div></section><section className={styles.grid} aria-label="Care overview"><article className={`${styles.overview} ${styles.primaryCard}`}><div className={styles.cardHeader}><div><span className={styles.cardEyebrow}>NEXT APPOINTMENT</span><h2>{nextAppointment ? nextAppointment.doctor.name : "Plan your consultation"}</h2></div><span className={styles.status}>{nextAppointment ? new Date(nextAppointment.scheduledAt).toLocaleDateString() : "Ready"}</span></div><p>{nextAppointment ? `${nextAppointment.doctor.specialty} · ${new Date(nextAppointment.scheduledAt).toLocaleTimeString([], {hour:"numeric",minute:"2-digit"})}` : "Find a specialist, review transparent consultation pricing and choose a convenient time."}</p><Link className="button primary" href={nextAppointment ? `/appointments/${encodeURIComponent(nextAppointment.id)}` : "/#specialists"}>{nextAppointment ? "Open appointment →" : "Explore specialists →"}</Link></article><article className={styles.overview}><div className={styles.metricIcon}>◷</div><span className={styles.cardEyebrow}>APPOINTMENTS</span><h2>Upcoming</h2><strong className={styles.bigNumber}>{data?.appointments.length ?? 0}</strong><p>Your appointment schedule is synced with your CareBridge account.</p></article><article className={styles.overview}><div className={styles.metricIcon}>▣</div><span className={styles.cardEyebrow}>MEDICAL RECORDS</span><h2>Documents</h2><strong className={styles.bigNumber}>{data?.documents.length ?? 0}</strong><p>Reports and records available to your care team.</p><Link className={styles.textLink} href="/documents">Open documents →</Link></article></section><section className={styles.actionsSection}><div><div className="eyebrow">QUICK ACTIONS</div><h2>Keep moving forward.</h2></div><div className={styles.actionGrid}><Link href="/records" className={styles.action}><span className={styles.actionIcon}>▤</span><span><strong>Medical records</strong><small>Review consultations, prescriptions and follow-ups</small></span><b>↗</b></Link><Link href="/care" className={styles.action}><span className={styles.actionIcon}>✦</span><span><strong>Care hub</strong><small>Coordinate treatment beyond consultation</small></span><b>↗</b></Link><Link href="/notifications" className={styles.action}><span className={styles.actionIcon}>◌</span><span><strong>Notifications</strong><small>{unread ? `${unread} updates need your attention` : "You are all caught up"}</small></span><b>↗</b></Link><Link href="/documents" className={styles.action}><span className={styles.actionIcon}>▣</span><span><strong>Medical documents</strong><small>Keep reports ready for your care team</small></span><b>↗</b></Link></div></section><section className={styles.notice}><div className={styles.noticeIcon}>✓</div><div><strong>Built around informed care</strong><p>CareBridge shows consultation pricing and comparable estimates as decision-support information. It is not a substitute for emergency care or a guarantee of treatment cost.</p></div></section><footer className={styles.footer}><Link href="/">CareBridge</Link><span>Global Healthcare. Trusted Care. Smarter Costs.</span><small>Development environment · Synthetic data only</small></footer></main>;
+  if (!data) return <main className="system-state"><h1>Your dashboard couldn’t be loaded.</h1><p role="alert">{error}</p><button className="button primary" onClick={() => window.location.reload()}>Try again</button><Link className="button ghost" href="/">Find a specialist</Link></main>;
+  const upcomingAppointments = data.appointments.filter((item) => item.status === "BOOKED" && new Date(item.scheduledAt) >= new Date()).sort((a, b) => Date.parse(a.scheduledAt) - Date.parse(b.scheduledAt));
+  const nextAppointment = upcomingAppointments[0];
+  return <main className={styles.shell}><div className={styles.ambient} /><header className={styles.topbar}><Link className="brand" href="/dashboard" aria-label="CareBridge patient dashboard"><span className="brand-mark">C</span><span>CareBridge</span></Link><nav aria-label="Patient navigation"><Link href="/">Find specialists</Link><Link href="/care">Care hub</Link><Link href="/documents">Documents</Link><Link href="/records">Records</Link><Link href="/profile">Profile</Link><Link href="/notifications" className={styles.notificationBell} aria-label={unread > 0 ? `Notifications, ${unread} unread` : "Notifications"} title="Notifications"><BellIcon />{unread > 0 && <span className={styles.notificationBadge}>{unread > 99 ? "99+" : unread}</span>}</Link><button onClick={logout} disabled={signingOut}>{signingOut ? "Signing out…" : "Sign out"}</button></nav></header><section className={styles.hero}><div><div className="eyebrow">YOUR CAREBRIDGE SPACE</div><h1>Good to see you.</h1><p>Everything you need for your care journey, brought together in one secure place.</p></div><div className={styles.profileCard}><div className={styles.avatar}>{user.email.slice(0,1).toUpperCase()}</div><div><span>Signed in as</span><strong>{user.email}</strong><small>{user.role === "PATIENT" ? "Patient account" : `${user.role} account`}</small></div></div></section>{error && <div className={styles.error} role="alert">{error}</div>}<section className={styles.grid} aria-label="Care overview"><article className={`${styles.overview} ${styles.primaryCard}`}><div className={styles.cardHeader}><div><span className={styles.cardEyebrow}>NEXT APPOINTMENT</span><h2>{nextAppointment ? nextAppointment.doctor.name : "Plan your consultation"}</h2></div><span className={styles.status}>{nextAppointment ? new Date(nextAppointment.scheduledAt).toLocaleDateString() : "Ready"}</span></div><p>{nextAppointment ? `${nextAppointment.doctor.specialty} · ${new Date(nextAppointment.scheduledAt).toLocaleTimeString([], {hour:"numeric",minute:"2-digit"})}` : "Find a specialist, review transparent consultation pricing and choose a convenient time."}</p><Link className="button primary" href={nextAppointment ? `/appointments/${encodeURIComponent(nextAppointment.id)}` : "/#specialists"}>{nextAppointment ? "Open appointment →" : "Explore specialists →"}</Link></article><article className={styles.overview}><div className={styles.metricIcon}>◷</div><span className={styles.cardEyebrow}>APPOINTMENTS</span><h2>Upcoming</h2><strong className={styles.bigNumber}>{upcomingAppointments.length}</strong><p>Your appointment schedule is synced with your CareBridge account.</p></article><article className={styles.overview}><div className={styles.metricIcon}>▣</div><span className={styles.cardEyebrow}>MEDICAL RECORDS</span><h2>Documents</h2><strong className={styles.bigNumber}>{data?.documents.length ?? 0}</strong><p>Reports and records available to your care team.</p><Link className={styles.textLink} href="/documents">Open documents →</Link></article></section><section className={styles.actionsSection}><div><div className="eyebrow">QUICK ACTIONS</div><h2>Keep moving forward.</h2></div><div className={styles.actionGrid}><Link href="/records" className={styles.action}><span className={styles.actionIcon}>▤</span><span><strong>Medical records</strong><small>Review consultations, prescriptions and follow-ups</small></span><b>↗</b></Link><Link href="/care" className={styles.action}><span className={styles.actionIcon}>✦</span><span><strong>Care hub</strong><small>Coordinate treatment beyond consultation</small></span><b>↗</b></Link><Link href="/notifications" className={styles.action}><span className={styles.actionIcon}>◌</span><span><strong>Notifications</strong><small>{unread ? `${unread} updates need your attention` : "You are all caught up"}</small></span><b>↗</b></Link><Link href="/documents" className={styles.action}><span className={styles.actionIcon}>▣</span><span><strong>Medical documents</strong><small>Keep reports ready for your care team</small></span><b>↗</b></Link></div></section><section className={styles.notice}><div className={styles.noticeIcon}>✓</div><div><strong>Built around informed care</strong><p>CareBridge shows consultation pricing and comparable estimates as decision-support information. It is not a substitute for emergency care or a guarantee of treatment cost.</p></div></section><footer className={styles.footer}><Link href="/">CareBridge</Link><span>Global Healthcare. Trusted Care. Smarter Costs.</span><small>Your personal care workspace</small></footer></main>;
 }

@@ -1,34 +1,40 @@
 "use client";
 
-import { FormEvent, useState } from "react";
+import { FormEvent, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 
-const API = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
+import { bindSession } from "../../lib/session-binding";
+import { apiFetch, jsonRequest } from "../../lib/request";
 
 export default function DoctorLogin() {
   const router = useRouter();
+  const patientPortal=process.env.NEXT_PUBLIC_PATIENT_APP_URL??(process.env.NODE_ENV==="production"?"":"http://localhost:3000");
+  const otherPortal=process.env.NEXT_PUBLIC_ADMIN_APP_URL??(process.env.NODE_ENV==="production"?"":"http://localhost:3002");
   const [email,setEmail]=useState("");
   const [password,setPassword]=useState("");
   const [busy,setBusy]=useState(false);
   const [error,setError]=useState("");
+  const loginRequest=useRef<AbortController|null>(null);
+  useEffect(()=>()=>loginRequest.current?.abort(),[]);
 
   async function submit(event: FormEvent) {
-    event.preventDefault(); setBusy(true); setError("");
+    event.preventDefault(); if (busy || loginRequest.current) return; const controller=new AbortController();loginRequest.current=controller; setBusy(true); setError("");
     try {
-      const response = await fetch(API + "/v1/auth/login", { method:"POST", credentials:"include", headers:{"content-type":"application/json"}, body:JSON.stringify({email,password}) });
-      const body = await response.json();
-      if (!response.ok) throw new Error(body.error ?? "Unable to sign in.");
-      if (body.user?.role !== "DOCTOR") {
-        const logoutResponse = await fetch(API + "/v1/auth/logout", { method: "POST", credentials: "include" }).catch(() => null);
-        if (!logoutResponse?.ok) {
-          throw new Error("This account is not registered as a doctor, and the session could not be cleared. Check your connection and retry before switching portals.");
-        }
+      const body = await apiFetch<{ user: { id:string; role: string } }>("/v1/auth/login", {...jsonRequest("POST", { email: email.trim(), password }), signal:controller.signal});
+      if(controller.signal.aborted)return;
+      bindSession(body.user.id,body.user.role);
+      if (body.user.role !== "DOCTOR") {
+        try { await apiFetch("/v1/auth/logout", { method: "POST" }); }
+        catch { throw new Error("This account is not registered as a doctor, and the session could not be cleared. Check your connection and retry before switching portals."); }
         throw new Error("This account is not registered as a doctor. Choose Patient or Admin sign-in instead.");
       }
-      router.push("/dashboard");
-    } catch (e) { setError(e instanceof Error ? e.message : "Unable to sign in."); }
-    finally { setBusy(false); }
+      router.replace("/dashboard");
+    } catch (e) { if(controller.signal.aborted)return;setError(e instanceof Error ? e.message : "Unable to sign in."); }
+    finally { if(loginRequest.current===controller)loginRequest.current=null;if(!controller.signal.aborted)setBusy(false); }
   }
 
-  return <main style={{minHeight:"100vh",display:"grid",placeItems:"center",background:"#f6f9fc",padding:24,fontFamily:"Inter,system-ui,sans-serif"}}><section style={{width:"100%",maxWidth:460,background:"white",border:"1px solid #dfe8f0",borderRadius:24,padding:32}}><div style={{fontSize:12,fontWeight:800,letterSpacing:".12em",color:"#5f7891"}}>CAREBRIDGE · DOCTOR</div><h1>Clinical workspace access</h1><p style={{color:"#64788d"}}>Sign in to review appointments and complete clinical records.</p><form onSubmit={submit} style={{display:"grid",gap:16,marginTop:24}}><label>Email<input type="email" required autoComplete="email" value={email} onChange={e=>setEmail(e.target.value)} style={{display:"block",width:"100%",marginTop:6,padding:12}}/></label><label>Password<input type="password" required autoComplete="current-password" value={password} onChange={e=>setPassword(e.target.value)} style={{display:"block",width:"100%",marginTop:6,padding:12}}/></label><button disabled={busy} type="submit" style={{padding:13,fontWeight:700}}>{busy?"Signing in…":"Sign in securely"}</button></form>{error&&<p role="alert" style={{color:"#b42318",marginTop:16}}>{error}</p>}<nav aria-label="Other CareBridge sign-in options" style={{display:"flex",gap:14,flexWrap:"wrap",marginTop:20,fontSize:13}}><a href={process.env.NEXT_PUBLIC_PATIENT_PORTAL_URL ?? "http://localhost:3000/login"} style={{color:"#1667a8"}}>Patient sign in</a><a href={process.env.NEXT_PUBLIC_ADMIN_PORTAL_URL ?? "http://localhost:3002/login"} style={{color:"#1667a8"}}>Admin sign in</a></nav><p style={{fontSize:12,color:"#718096",marginTop:22}}>Development environment · Synthetic data only.</p></section></main>;
+  return <main style={{minHeight:"100vh",display:"grid",placeItems:"center",background:"#f6f9fc",padding:24,fontFamily:"Inter,system-ui,sans-serif"}}><section style={{width:"100%",maxWidth:460,background:"white",border:"1px solid #dfe8f0",borderRadius:24,padding:32}}><div style={{fontSize:12,fontWeight:800,letterSpacing:".12em",color:"#5f7891"}}>CAREBRIDGE · DOCTOR</div><h1>Clinical workspace access</h1><p style={{color:"#64788d"}}>Sign in to review appointments and complete clinical records.</p><form onSubmit={submit} style={{display:"grid",gap:16,marginTop:24}}><label>Email<input disabled={busy} type="email" required autoComplete="email" value={email} onChange={e=>setEmail(e.target.value)} style={{display:"block",width:"100%",marginTop:6,padding:12}}/></label><label>Password<input disabled={busy} type="password" required autoComplete="current-password" value={password} onChange={e=>setPassword(e.target.value)} style={{display:"block",width:"100%",marginTop:6,padding:12}}/></label><button disabled={busy} type="submit" style={{padding:13,fontWeight:700}}>{busy?"Signing in…":"Sign in securely"}</button></form>{error&&<p role="alert" style={{color:"#b42318",marginTop:16}}>{error}</p>}<nav aria-label="Other CareBridge sign-in options" style={{display:"flex",gap:14,flexWrap:"wrap",marginTop:20,fontSize:13}}>
+        {patientPortal && <a href={new URL("/login",patientPortal).toString()} style={{color:"#1667a8"}}>Patient sign in</a>}
+        {otherPortal && <a href={new URL("/login",otherPortal).toString()} style={{color:"#1667a8"}}>Admin sign in</a>}
+      </nav><p style={{fontSize:12,color:"#718096",marginTop:22}}>For authorized healthcare professionals.</p></section></main>;
 }
