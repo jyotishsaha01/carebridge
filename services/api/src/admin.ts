@@ -20,7 +20,7 @@ export async function registerAdminRoutes(app: FastifyInstance) {
       prisma.doctor.count({ where: { isVerified: true, isActive: true } }),
       prisma.appointment.count(),
       prisma.session.count({ where: { revokedAt: null, expiresAt: { gt: new Date() } } }),
-      prisma.careRequest.count({ where: { status: { in: ["REQUESTED", "REVIEWING"] } } }),
+      prisma.careRequest.count({ where: { status: { in: ["REQUESTED", "REVIEWING", "APPROVED", "SCHEDULED"] } } }),
     ]);
     return { patients, doctors, verifiedDoctors, appointments, openSessions, pendingCareRequests };
   });

@@ -10,6 +10,7 @@ export function getCurrentUser(){return apiFetch<{user:AuthUser}>("/v1/auth/me")
 export function signOut(){return apiFetch<{ok:true}>("/v1/auth/logout",{method:"POST"});}
 
 export type Overview = { patients: number; doctors: number; verifiedDoctors: number; appointments: number; openSessions: number; pendingCareRequests: number };
+export type AnalyticsOverview = { patients: number; doctors: number; verifiedDoctors: number; appointments: number; consultations: number; completedConsultations: number; careRequests: number; unreadNotifications: number; recentAuditEvents: number; consultationCompletionRate: number };
 export type AdminDoctor = { id: string; name: string; slug: string; location: string; status: string; isVerified: boolean; isActive: boolean; pendingCredentials: number; specialty: { name: string } };
 export type AuditLog = { id: string; actorUserId: string | null; action: string; resourceType: string; resourceId: string | null; outcome: string; metadata: Record<string, unknown> | null; createdAt: string };
 export type AdminCredential = { id: string; doctorId: string; type: string; licenseNumber: string; jurisdiction: string; documentName: string | null; status: "PENDING" | "APPROVED" | "REJECTED"; createdAt: string; reviewedAt: string | null };
@@ -23,7 +24,8 @@ export type AdminSupportTicket = { id: string; category: string; message: string
 export function getOverview() { return apiFetch<Overview>("/v1/admin/overview"); }
 export function getDoctors() { return apiFetch<AdminDoctor[]>("/v1/admin/doctors?verified=all"); }
 export function verifyDoctor(doctorId: string, verified: boolean) { return apiFetch<AdminDoctor>(`/v1/admin/doctors/${encodeURIComponent(doctorId)}/verification`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ verified }) }); }
-export function getAuditLogs() { return apiFetch<AuditLog[]>("/v1/admin/audit-logs?limit=40"); }
+export function getAuditLogs(limit = 40) { return apiFetch<AuditLog[]>(`/v1/admin/audit-logs?limit=${limit}`); }
+export function getAnalyticsOverview() { return apiFetch<AnalyticsOverview>("/v1/admin/analytics/overview"); }
 export function getCredentials(doctorId: string) { return apiFetch<AdminCredential[]>(`/v1/admin/doctors/${encodeURIComponent(doctorId)}/credentials`); }
 export function reviewCredential(credentialId: string, status: AdminCredential["status"]) { return apiFetch<AdminCredential>(`/v1/admin/credentials/${encodeURIComponent(credentialId)}`, { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ status }) }); }
 export function getPatients() { return apiFetch<AdminPatient[]>("/v1/admin/patients?limit=100"); }
@@ -34,7 +36,7 @@ export function getCareRequests(status?: AdminCareRequestStatus) {
   if (status) query.set("status", status);
   return apiFetch<AdminCareRequest[]>(`/v1/admin/care-requests?${query.toString()}`);
 }
-export function updateCareRequestStatus(id: string, status: AdminCareRequestStatus) {
-  return apiFetch<AdminCareRequest>(`/v1/admin/care-requests/${encodeURIComponent(id)}`, { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ status }) });
+export function updateCareRequestStatus(id: string, status: AdminCareRequestStatus, expected?: { expectedStatus: AdminCareRequestStatus; expectedUpdatedAt: string }) {
+  return apiFetch<AdminCareRequest>(`/v1/admin/care-requests/${encodeURIComponent(id)}`, { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ status, ...expected }) });
 }
 export function getSupportTickets(limit = 20) { return apiFetch<AdminSupportTicket[]>(`/v1/admin/support/tickets?limit=${limit}`); }
