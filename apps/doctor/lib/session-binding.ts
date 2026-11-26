@@ -3,7 +3,7 @@ let controller = new AbortController();
 let current: SessionScope = { userId: null, role: null, generation: 0, signal: controller.signal };
 
 export class SessionChangedError extends Error {
-  constructor() { super("Your signed-in account changed. Sign in again before continuing."); this.name = "SessionChangedError"; }
+  constructor() { super("This view changed while the request was in progress. Please try again."); this.name = "SessionChangedError"; }
 }
 function rotate(userId: string | null, role: string | null) {
   controller.abort(); controller = new AbortController();

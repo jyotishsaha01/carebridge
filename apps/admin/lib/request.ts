@@ -33,12 +33,15 @@ export async function apiFetch<T>(path: string, init: ApiRequestInit = {}): Prom
     const body: unknown = await response.json().catch(() => null);
     if (bound) assertSessionScope(sessionScope);
     const changed = body && typeof body === "object" && "code" in body && body.code === "ACCOUNT_CHANGED";
-    if (changed || (response.status === 401 && path !== "/v1/auth/login" && path !== "/v1/auth/me")) {
+    if (changed) {
       invalidateSession();
       if (typeof window !== "undefined") window.dispatchEvent(new Event("carebridge:session-expired"));
+    } else if (bound && response.status === 401 && typeof window !== "undefined") {
+      // Confirm the session separately before interpreting a feature's 401 as logout.
+      window.dispatchEvent(new Event("carebridge:session-recheck"));
     }
     const message = body && typeof body === "object" && "error" in body && typeof body.error === "string" ? body.error
-      : response.status === 401 ? "Your session has expired. Sign in again."
+      : response.status === 401 ? "This request could not be authorized. Please try again."
       : response.status === 403 ? "You do not have access to this action." : "Unable to complete this request. Please try again.";
     throw new ApiError(message, response.status);
   }

@@ -20,14 +20,12 @@ export default function DoctorLogin() {
   async function submit(event: FormEvent) {
     event.preventDefault(); if (busy || loginRequest.current) return; const controller=new AbortController();loginRequest.current=controller; setBusy(true); setError("");
     try {
-      const body = await apiFetch<{ user: { id:string; role: string } }>("/v1/auth/login", {...jsonRequest("POST", { email: email.trim(), password }), signal:controller.signal});
+      const body = await apiFetch<{ user: { id:string; role: string } }>("/v1/auth/login", {...jsonRequest("POST", { email: email.trim(), password, role: "DOCTOR" }), signal:controller.signal});
       if(controller.signal.aborted)return;
-      bindSession(body.user.id,body.user.role);
-      if (body.user.role !== "DOCTOR") {
-        try { await apiFetch("/v1/auth/logout", { method: "POST" }); }
-        catch { throw new Error("This account is not registered as a doctor, and the session could not be cleared. Check your connection and retry before switching portals."); }
+      if (body.user?.role !== "DOCTOR") {
         throw new Error("This account is not registered as a doctor. Choose Patient or Admin sign-in instead.");
       }
+      bindSession(body.user.id,body.user.role);
       router.replace("/dashboard");
     } catch (e) { if(controller.signal.aborted)return;setError(e instanceof Error ? e.message : "Unable to sign in."); }
     finally { if(loginRequest.current===controller)loginRequest.current=null;if(!controller.signal.aborted)setBusy(false); }

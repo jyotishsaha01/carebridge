@@ -2,7 +2,8 @@ export type AuthUser = { id: string; email: string; role: "PATIENT" | "DOCTOR" |
 import { apiFetch } from "./request";
 import { bindSession } from "./session-binding";
 export async function signIn(email:string,password:string,signal?:AbortSignal) {
-  const result=await apiFetch<{user:AuthUser}>("/v1/auth/login",{method:"POST",signal,headers:{"content-type":"application/json"},body:JSON.stringify({email,password})});
+  const result=await apiFetch<{user:AuthUser}>("/v1/auth/login",{method:"POST",signal,headers:{"content-type":"application/json"},body:JSON.stringify({email,password,role:"ADMIN"})});
+  if(result.user?.role!=="ADMIN") throw new Error("This account is not registered as an administrator. Choose Patient or Doctor sign-in instead.");
   bindSession(result.user.id,result.user.role);return result;
 }
 export function getCurrentUser(){return apiFetch<{user:AuthUser}>("/v1/auth/me");}

@@ -2,7 +2,7 @@
 
 import { FormEvent, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { signIn, signOut } from "../../lib/api";
+import { signIn } from "../../lib/api";
 
 export default function AdminLogin() {
   const router = useRouter();
@@ -16,7 +16,7 @@ export default function AdminLogin() {
   useEffect(()=>()=>loginRequest.current?.abort(),[]);
   async function submit(event:FormEvent){
     event.preventDefault(); if (busy || loginRequest.current) return; const controller=new AbortController();loginRequest.current=controller;setBusy(true); setError("");
-    try { const result=await signIn(email,password,controller.signal); if(controller.signal.aborted)return; if(result.user.role!=="ADMIN") { let cleared=true;try{await signOut();}catch{cleared=false;}throw new Error(cleared?"This account is not registered as an administrator. Choose Patient or Doctor sign-in instead.":"This account is not registered as an administrator, and the session could not be cleared. Check your connection and retry before switching portals."); } router.replace("/dashboard"); }
+    try { await signIn(email,password,controller.signal); if(controller.signal.aborted)return; router.replace("/dashboard"); }
     catch(e){if(controller.signal.aborted)return;setError(e instanceof Error?e.message:"Unable to sign in.");} finally{if(loginRequest.current===controller)loginRequest.current=null;if(!controller.signal.aborted)setBusy(false);}
   }
   return <main style={{minHeight:"100vh",display:"grid",placeItems:"center",background:"#f7f9fc",color:"#172334",padding:24,fontFamily:"Inter,system-ui,sans-serif"}}>
