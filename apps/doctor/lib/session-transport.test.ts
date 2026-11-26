@@ -61,4 +61,20 @@ describe("session-bound private requests", () => {
     expect(captureSessionScope().userId).toBeNull();
     expect(dispatchEvent).toHaveBeenCalledWith(expect.objectContaining({ type: "carebridge:session-expired" }));
   });
+  it("rechecks a feature's 401 without discarding the bound identity", async () => {
+    const dispatchEvent = vi.fn(); vi.stubGlobal("window", { dispatchEvent });
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(Response.json({ error: "Feature unavailable" }, { status: 401 })));
+    await expect(apiFetch("/v1/private-record")).rejects.toMatchObject({ status: 401 });
+    expect(captureSessionScope().userId).toBe("user-A");
+    expect(dispatchEvent).toHaveBeenCalledOnce();
+    expect(dispatchEvent).toHaveBeenCalledWith(expect.objectContaining({ type: "carebridge:session-recheck" }));
+  });
+  it("does not treat a public endpoint's 401 as a session failure", async () => {
+    const dispatchEvent = vi.fn(); vi.stubGlobal("window", { dispatchEvent });
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(Response.json({ error: "Unavailable" }, { status: 401 })));
+    await expect(apiFetch("/v1/doctors")).rejects.toMatchObject({ status: 401 });
+    expect(captureSessionScope().userId).toBe("user-A");
+    expect(dispatchEvent).not.toHaveBeenCalled();
+  });
+
 });

@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import { ApiError, API_URL, apiFetch } from "../../lib/api";
 import styles from "./notifications.module.css";
+import { captureSessionScope } from "../../lib/session-binding";
 
 type Notification = {
   id: string;
@@ -38,7 +39,7 @@ export default function NotificationsPage() {
       setItems(Array.isArray(data.notifications) ? data.notifications : []); setUnread(Number.isFinite(data.unreadCount) ? data.unreadCount : 0); setError(""); setSignInRequired(false);
       return true;
     } catch (cause) {
-      if (!signal?.aborted) { setError(cause instanceof Error ? cause.message : "Unable to load notifications."); setSignInRequired(cause instanceof ApiError && cause.status === 401); }
+      if (!signal?.aborted) { setError(cause instanceof Error ? cause.message : "Unable to load notifications."); setSignInRequired(cause instanceof ApiError && cause.status === 401 && !captureSessionScope().userId); }
       return false;
     } finally { if (!signal?.aborted) setLoading(false); }
   }, []);

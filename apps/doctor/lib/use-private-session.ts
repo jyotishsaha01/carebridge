@@ -64,12 +64,14 @@ export function usePrivateSession(role: Role, redirectOnInvalid: string | null =
     window.addEventListener("focus", focus);
     document.addEventListener("visibilitychange", visibility);
     window.addEventListener("carebridge:session-expired", clearSession);
+    window.addEventListener("carebridge:session-recheck", focus);
     return () => {
       active.current = false; window.clearTimeout(timer); request.current?.abort(); request.current = null;
       releaseSessionScope(scope.current); scope.current = null;
       window.removeEventListener("focus", focus);
       document.removeEventListener("visibilitychange", visibility);
       window.removeEventListener("carebridge:session-expired", clearSession);
+      window.removeEventListener("carebridge:session-recheck", focus);
     };
   }, [clearSession, verify]);
 

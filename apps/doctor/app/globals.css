@@ -4,6 +4,13 @@ body { background: #f4f7f6; color: #14201d; font-family: Arial, Helvetica, sans-
 button, input, textarea, select { font: inherit; }
 button { cursor: pointer; }
 .shell { min-height: 100vh; }
+.page-navigation { position: relative; z-index: 30; background: #f3f8f5; color: #204c40; border-bottom: 1px solid #dce8e1; }
+.page-navigation-inner { max-width: 1280px; min-height: 64px; margin: 0 auto; padding: 10px 24px; display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.page-navigation-links { display: flex; align-items: center; gap: 4px; }
+.page-navigation button, .page-navigation a { min-height: 44px; display: inline-flex; align-items: center; justify-content: center; gap: 8px; padding: 10px 14px; border-radius: 10px; color: inherit; font-size: 14px; font-weight: 700; text-decoration: none; }
+.page-navigation button { border: 1px solid #bed2c6; background: #fff; }
+.page-navigation a:hover, .page-navigation a[aria-current="page"], .page-navigation button:hover { background: #e0eee5; }
+@media (max-width: 480px) { .page-navigation-inner { padding-inline: 16px; gap: 6px; } .page-navigation button, .page-navigation a { padding-inline: 11px; } }
 .topbar { display: flex; align-items: center; justify-content: space-between; gap: 24px; padding: 18px 28px; background: #0f3028; color: #fff; }
 .brand { font-size: 21px; font-weight: 700; letter-spacing: -.02em; }
 .role { opacity: .75; font-size: 13px; }

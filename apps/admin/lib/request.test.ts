@@ -17,12 +17,12 @@ describe("authenticated API transport", () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response("<html>internal proxy</html>", { status: 502 })));
     await expect(apiFetch("/v1/example")).rejects.toThrow("Unable to complete this request");
   });
-  it("notifies the shell when a private request loses its session", async () => {
+  it("asks the shell to verify a private request authentication failure", async () => {
     const dispatchEvent = vi.fn();
     vi.stubGlobal("window", { dispatchEvent });
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(Response.json({ error: "Session expired" }, { status: 401 })));
     await expect(apiFetch("/v1/doctor/appointments")).rejects.toBeInstanceOf(ApiError);
-    expect(dispatchEvent).toHaveBeenCalledWith(expect.objectContaining({ type: "carebridge:session-expired" }));
+    expect(dispatchEvent).toHaveBeenCalledWith(expect.objectContaining({ type: "carebridge:session-recheck" }));
   });
   it("keeps an invalid sign-in on the sign-in form", async () => {
     const dispatchEvent = vi.fn();

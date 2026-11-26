@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Image from "next/image";
-import { getCurrentUser, getDoctors, getSpecialties, type ApiDoctor } from "../lib/api";
+import { ApiError, getCurrentUser, getDoctors, getSpecialties, type ApiDoctor } from "../lib/api";
 import { doctors as demoDoctors, specialties as demoSpecialties } from "../data";
 import SpecialistDialog from "./specialist-dialog";
 
@@ -10,7 +10,7 @@ const HERO_IMAGES = Array.from({ length: 10 }, (_, index) => `/images/hero/care-
 const ALLOW_DEMO_CATALOG = process.env.NODE_ENV !== "production";
 
 export default function Home() {
-  const [signedIn, setSignedIn] = useState(false);
+  const [signedIn, setSignedIn] = useState<boolean | null>(null);
   const [query, setQuery] = useState("");
   const [specialty, setSpecialty] = useState("All specialties");
   const [doctorList, setDoctorList] = useState<ApiDoctor[]>([]);
@@ -22,7 +22,7 @@ export default function Home() {
 
   useEffect(() => {
     let active = true;
-    const refresh = () => { void getCurrentUser().then(({ user }) => { if (active) setSignedIn(user.role === "PATIENT"); }).catch(() => { if (active) setSignedIn(false); }); };
+    const refresh = () => { void getCurrentUser().then(({ user }) => { if (active) setSignedIn(user.role === "PATIENT"); }).catch((cause) => { if (active) setSignedIn(cause instanceof ApiError && [401, 403].includes(cause.status) ? false : null); }); };
     refresh();
     window.addEventListener("carebridge:session-expired", refresh);
     return () => { active = false; window.removeEventListener("carebridge:session-expired", refresh); };
@@ -87,7 +87,7 @@ export default function Home() {
           <a className="nav-primary" href="#specialists">Find a specialist</a>
           <a href="#how-it-works">How it works</a>
           <a href="/compare">Compare costs</a>
-          <a className="nav-login" href="/login">Sign in</a>
+          <a className="nav-login" href={signedIn === false ? "/login" : "/dashboard"}>{signedIn === true ? "Dashboard" : signedIn === false ? "Sign in" : "My account"}</a>
         </nav>
       </header>
 

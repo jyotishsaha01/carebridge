@@ -64,11 +64,15 @@ export async function apiFetch<T>(path: string, init: ApiRequestInit = {}): Prom
       const body: unknown = await response.json().catch(() => null);
       if (bound) assertSessionScope(sessionScope);
       const changed = body && typeof body === "object" && "code" in body && body.code === "ACCOUNT_CHANGED";
-      if (changed || (response.status === 401 && !["/v1/auth/login", "/v1/auth/me"].includes(path))) {
+      if (changed) {
         invalidateSession();
         if (typeof window !== "undefined") window.dispatchEvent(new Event("carebridge:session-expired"));
+      } else if (bound && response.status === 401 && typeof window !== "undefined") {
+        // A feature failure is not proof that the API session ended. The guard
+        // hides private content while /auth/me checks the current identity.
+        window.dispatchEvent(new Event("carebridge:session-recheck"));
       }
-      const message = body && typeof body === "object" && "error" in body && typeof body.error === "string" ? body.error : response.status === 401 ? "Please sign in to continue." : "CareBridge is temporarily unavailable. Please try again.";
+      const message = body && typeof body === "object" && "error" in body && typeof body.error === "string" ? body.error : response.status === 401 ? "This request could not be authorized. Please try again." : "CareBridge is temporarily unavailable. Please try again.";
       throw new ApiError(message, response.status);
     }
     const result = response.status === 204 ? undefined : await response.json();

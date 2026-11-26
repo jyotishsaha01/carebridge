@@ -31,6 +31,14 @@ button:disabled { cursor: not-allowed; opacity: .6; }
 button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible { outline: 3px solid #e59b70; outline-offset: 3px; }
 .site-shell { min-height: 100vh; overflow: clip; position: relative; }
 
+.page-navigation { position: relative; z-index: 30; background: #f3f8f5; color: #204c40; border-bottom: 1px solid #dce8e1; }
+.page-navigation-inner { max-width: 1280px; min-height: 64px; margin: 0 auto; padding: 10px 24px; display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.page-navigation-links { display: flex; align-items: center; gap: 4px; }
+.page-navigation button, .page-navigation a { min-height: 44px; display: inline-flex; align-items: center; justify-content: center; gap: 8px; padding: 10px 14px; border-radius: 10px; color: inherit; font-size: 14px; font-weight: 700; text-decoration: none; }
+.page-navigation button { border: 1px solid #bed2c6; background: #fff; }
+.page-navigation a:hover, .page-navigation a[aria-current="page"], .page-navigation button:hover { background: #e0eee5; }
+@media (max-width: 480px) { .page-navigation-inner { padding-inline: 16px; gap: 6px; } .page-navigation button, .page-navigation a { padding-inline: 11px; } }
+
 .topbar {
   width: min(1280px, calc(100% - 48px));
   height: 78px;

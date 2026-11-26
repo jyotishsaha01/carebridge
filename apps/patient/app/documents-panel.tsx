@@ -46,7 +46,7 @@ function DocumentsPanelContent() {
     } catch (cause) {
       if (!signal?.aborted) {
         setError(cause instanceof Error ? cause.message : "Unable to load your documents. Please try again.");
-        setSignInRequired(cause instanceof ApiError && cause.status === 401);
+        setSignInRequired(cause instanceof ApiError && cause.status === 401 && !captureSessionScope().userId);
       }
     } finally { if (!signal?.aborted) setLoading(false); }
   }
