@@ -11,7 +11,7 @@ COPY scripts ./scripts
 COPY database ./database
 COPY services/api ./services/api
 RUN pnpm db:generate:production && pnpm --filter @carebridge/api build
-RUN pnpm --filter @carebridge/api --offline deploy --legacy --prod --no-optional --ignore-scripts /release/api && node scripts/prepare-api-runtime.mjs /release/api
+RUN node scripts/prepare-api-runtime.mjs /release/api
 
 FROM build AS migrations
 ENV NODE_ENV=production XDG_CACHE_HOME=/tmp/carebridge-cache
