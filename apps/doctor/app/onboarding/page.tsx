@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import Link from "next/link";
+import { useRef, useState } from "react";
 
 import { apiFetch, jsonRequest } from "../../lib/request";
 const steps = ["Professional profile", "Credentials", "Review & submit"];
@@ -13,6 +14,7 @@ export default function DoctorOnboarding() {
   const [submitted, setSubmitted] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
+  const submissionLock=useRef(false);
 
   function continueToNextStep() {
     setError("");
@@ -34,7 +36,7 @@ export default function DoctorOnboarding() {
   }
 
   async function submit() {
-    if (submitting) return;
+    if (submissionLock.current) return;
     setError("");
     if (license.trim().length < 2 || jurisdiction.trim().length < 2) {
       setStep(1);
@@ -42,7 +44,7 @@ export default function DoctorOnboarding() {
       return;
     }
 
-    setSubmitting(true);
+    submissionLock.current=true;setSubmitting(true);
     try {
       await apiFetch("/v1/doctor/credentials",jsonRequest("POST",{
         type:"Medical license",licenseNumber:license.trim(),jurisdiction:jurisdiction.trim(),documentName:doc.trim()||undefined,
@@ -51,7 +53,7 @@ export default function DoctorOnboarding() {
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Submission failed.");
     } finally {
-      setSubmitting(false);
+      submissionLock.current=false;setSubmitting(false);
     }
   }
 
@@ -72,13 +74,14 @@ export default function DoctorOnboarding() {
           <section style={{ background: "white", border: "1px solid #dfe8f0", borderRadius: 24, padding: 30 }}>
             <h2>Application submitted</h2>
             <p style={{ color: "#64788d" }}>Your credential details have been stored for admin review. A document file has not been uploaded through this form.</p>
+            <p><Link href="/profile">View saved credentials and review status →</Link></p>
             <b style={{ display: "inline-block", padding: "8px 12px", borderRadius: 999, background: "#fff7ed", color: "#9a5b11" }}>PENDING REVIEW</b>
           </section>
         ) : (
           <section style={{ background: "white", border: "1px solid #dfe8f0", borderRadius: 24, padding: 30 }}>
             {step === 0 && (
               <div style={{ padding: 18, borderRadius: 16, background: "#f8fafc" }}>
-                <h2>Professional profile</h2>
+                <h2>Professional profile</h2><Link href="/profile">Review your professional profile →</Link>
                 <p style={{ color: "#64788d" }}>Your existing CareBridge doctor profile will be used during verification. Confirm that your profile details are current before continuing.</p>
               </div>
             )}

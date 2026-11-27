@@ -6,7 +6,10 @@ import { recordAudit } from "./audit";
 import { DoctorStateError, withLockedDoctor } from "./doctorState";
 import { notifyUsersByRole, createNotification } from "./notificationsPrototype";
 
-const slotInput = z.object({ startsAt: z.coerce.date(), endsAt: z.coerce.date() }).refine((v) => v.endsAt > v.startsAt, { message: "endsAt must be after startsAt" });
+const slotInput = z.object({ startsAt: z.coerce.date(), endsAt: z.coerce.date() }).refine((v) => {
+  const minutes = (v.endsAt.getTime() - v.startsAt.getTime()) / 60_000;
+  return Number.isInteger(minutes) && minutes >= 15 && minutes <= 90;
+}, { message: "Consultation slots must last a whole number of minutes between 15 and 90" });
 
 export async function registerDoctorOperationsRoutes(app: FastifyInstance) {
   app.get("/v1/doctor/me", async (request, reply) => {
@@ -21,8 +24,11 @@ export async function registerDoctorOperationsRoutes(app: FastifyInstance) {
     const user = await requireRole(request, reply, ["DOCTOR"]);
     if (!user?.doctor) return;
     const input = z.object({ bio: z.string().trim().max(4000).optional(), expertise: z.array(z.string().trim().min(2).max(120)).max(30).optional(), location: z.string().trim().max(160).optional(), consultationPriceUsd: z.coerce.number().positive().max(5000).optional() }).parse(request.body);
-    const doctor = await prisma.doctor.update({ where: { id: user.doctor.id }, data: input, include: { specialty: true } });
-    await recordAudit(request, { actorUserId: user.id, action: "DOCTOR_PROFILE_UPDATED", resourceType: "Doctor", resourceId: doctor.id, outcome: "SUCCESS" });
+    const doctor = await prisma.$transaction(async (tx) => {
+      const saved = await tx.doctor.update({ where: { id: user.doctor!.id }, data: input, include: { specialty: true } });
+      await recordAudit(request, { actorUserId: user.id, action: "DOCTOR_PROFILE_UPDATED", resourceType: "Doctor", resourceId: saved.id, outcome: "SUCCESS" }, tx);
+      return saved;
+    });
     return doctor;
   });
 
@@ -30,7 +36,8 @@ export async function registerDoctorOperationsRoutes(app: FastifyInstance) {
     const user = await requireVerifiedDoctor(request, reply);
     if (!user?.doctor) return;
     const query = z.object({ from: z.coerce.date().optional(), to: z.coerce.date().optional() }).parse(request.query);
-    return prisma.availabilitySlot.findMany({ where: { doctorId: user.doctor.id, startsAt: query.from ? { gte: query.from, ...(query.to ? { lte: query.to } : {}) } : undefined }, orderBy: { startsAt: "asc" }, take: 200 });
+    if (query.from && query.to && query.to < query.from) return reply.code(400).send({ error: "Availability end must be after its start" });
+    return prisma.availabilitySlot.findMany({ where: { doctorId: user.doctor.id, startsAt: query.from || query.to ? { ...(query.from ? { gte: query.from } : {}), ...(query.to ? { lte: query.to } : {}) } : undefined }, orderBy: { startsAt: "asc" }, take: 200 });
   });
 
   app.post("/v1/doctor/availability", async (request, reply) => {
@@ -43,14 +50,15 @@ export async function registerDoctorOperationsRoutes(app: FastifyInstance) {
       slot = await prisma.$transaction(async (tx) => {
         const overlap = await tx.availabilitySlot.findFirst({ where: { doctorId: user.doctor!.id, startsAt: { lt: input.endsAt }, endsAt: { gt: input.startsAt } } });
         if (overlap) return null;
-        return tx.availabilitySlot.create({ data: { doctorId: user.doctor!.id, startsAt: input.startsAt, endsAt: input.endsAt, status: "AVAILABLE" } });
+        const saved = await tx.availabilitySlot.create({ data: { doctorId: user.doctor!.id, startsAt: input.startsAt, endsAt: input.endsAt, status: "AVAILABLE" } });
+        await recordAudit(request, { actorUserId: user.id, action: "DOCTOR_AVAILABILITY_CREATED", resourceType: "AvailabilitySlot", resourceId: saved.id, outcome: "SUCCESS" }, tx);
+        return saved;
       }, { isolationLevel: "Serializable" });
     } catch (error) {
       if (["P2002", "P2034"].includes((error as { code?: string }).code ?? "")) return reply.code(409).send({ error: "Availability changed while saving. Refresh and try again." });
       throw error;
     }
     if (!slot) return reply.code(409).send({ error: "Availability overlaps an existing slot" });
-    await recordAudit(request, { actorUserId: user.id, action: "DOCTOR_AVAILABILITY_CREATED", resourceType: "AvailabilitySlot", resourceId: slot.id, outcome: "SUCCESS" });
     return reply.code(201).send(slot);
   });
 
@@ -96,9 +104,18 @@ export async function registerDoctorOperationsRoutes(app: FastifyInstance) {
     const slot = await prisma.availabilitySlot.findFirst({ where: { id: slotId, doctorId: user.doctor.id } });
     if (!slot) return reply.code(404).send({ error: "Availability slot not found" });
     if (slot.status !== "AVAILABLE") return reply.code(409).send({ error: "Booked slots cannot be removed" });
-    const deleted = await prisma.availabilitySlot.deleteMany({ where: { id: slot.id, doctorId: user.doctor.id, status: "AVAILABLE" } });
+    let deleted;
+    try {
+      deleted = await prisma.$transaction(async (tx) => {
+        const result = await tx.availabilitySlot.deleteMany({ where: { id: slot.id, doctorId: user.doctor!.id, status: "AVAILABLE" } });
+        if (result.count === 1) await recordAudit(request, { actorUserId: user.id, action: "DOCTOR_AVAILABILITY_DELETED", resourceType: "AvailabilitySlot", resourceId: slot.id, outcome: "SUCCESS" }, tx);
+        return result;
+      });
+    } catch (error) {
+      if ((error as { code?: string }).code === "P2034") return reply.code(409).send({ error: "Availability changed while removing it. Refresh and try again." });
+      throw error;
+    }
     if (deleted.count !== 1) return reply.code(409).send({ error: "Availability changed while removing it. Refresh and try again." });
-    await recordAudit(request, { actorUserId: user.id, action: "DOCTOR_AVAILABILITY_DELETED", resourceType: "AvailabilitySlot", resourceId: slot.id, outcome: "SUCCESS" });
     return { ok: true };
   });
 }

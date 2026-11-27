@@ -5,7 +5,7 @@ import { API_URL, apiFetch } from "../../lib/api";
 import { SessionChangedError } from "../../lib/session-binding";
 import styles from "./care.module.css";
 
-type Task = { id: string; title: string; description?: string | null; dueAt?: string | null; status: string };
+type Task = { id: string; title: string; description?: string | null; dueAt?: string | null; status: string; updatedAt?: string };
 type Plan = { id: string; title: string; description?: string | null; status: string; tasks: Task[] };
 type Request = { id: string; type: string; title: string; description?: string | null; status: string; country?: string | null; targetDate?: string | null; createdAt: string; updatedAt?: string };
 
@@ -37,6 +37,8 @@ export default function CarePage() {
   const [refreshing, setRefreshing] = useState(false);
   const [busy, setBusy] = useState(false);
   const [updatingTask, setUpdatingTask] = useState<string | null>(null);
+  const [taskNotice, setTaskNotice] = useState("");
+  const taskPending = useRef(false);
   const lifetime = useRef<AbortController | null>(null);
   const activeLoad = useRef<AbortController | null>(null);
   const submitting = useRef(false);
@@ -107,12 +109,20 @@ export default function CarePage() {
 
   async function updateTask(planId: string, task: Task) {
     const signal = lifetime.current?.signal;
-    if (!signal || signal.aborted || updatingTask) return;
+    if (!signal || signal.aborted || taskPending.current) return;
+    taskPending.current = true;
     const next = task.status === "DONE" ? "TODO" : "DONE";
-    setUpdatingTask(task.id); setError("");
-    try { await apiFetch(`/v1/patient/care-plans/${encodeURIComponent(planId)}/tasks/${encodeURIComponent(task.id)}`, { method: "PATCH", signal, headers: { "content-type": "application/json" }, body: JSON.stringify({ status: next }) }); if (!signal.aborted) await load(); }
+    setUpdatingTask(task.id); setError(""); setTaskNotice("");
+    try {
+      const saved = await apiFetch<Task>(`/v1/patient/care-plans/${encodeURIComponent(planId)}/tasks/${encodeURIComponent(task.id)}`, { method: "PATCH", signal, headers: { "content-type": "application/json" }, body: JSON.stringify({ status: next, expectedStatus: task.status, ...(task.updatedAt ? { expectedUpdatedAt: task.updatedAt } : {}) }) });
+      if (!signal.aborted) {
+        setPlans(current => current.map(plan => plan.id === planId ? { ...plan, tasks: plan.tasks.map(item => item.id === saved.id ? saved : item) } : plan));
+        setTaskNotice(`Task progress saved: ${saved.status.toLowerCase().replaceAll("_", " ")}.`);
+        await load();
+      }
+    }
     catch (cause) { if (!signal.aborted) setError(cause instanceof Error ? cause.message : "Unable to update this task. Please try again."); }
-    finally { if (!signal.aborted) setUpdatingTask(null); }
+    finally { taskPending.current = false; if (!signal.aborted) setUpdatingTask(null); }
   }
 
   return (
@@ -140,6 +150,7 @@ export default function CarePage() {
         </article>
 
         <article className={styles.card}><div className={styles.cardHead}><div><span className={styles.kicker}>YOUR PLAN</span><h2>Care plans</h2></div><span className={styles.count}>{plans.length}</span></div>
+          {taskNotice && <p role="status" className={styles.message}>{taskNotice}</p>}
           {plans.length === 0 ? !loading && !loadError && <div className={styles.empty}>Your care plan will appear here after your clinician or care team creates one.</div> : plans.map((plan) => <div className={styles.plan} key={plan.id}><div className={styles.planTitle}><strong>{plan.title}</strong><span>{plan.status}</span></div>{plan.description && <p>{plan.description}</p>}{plan.tasks.map((task) => <button className={`${styles.task} ${task.status === "DONE" ? styles.done : ""}`} key={task.id} disabled={updatingTask !== null} aria-pressed={task.status === "DONE"} onClick={() => updateTask(plan.id, task)}><span>{task.status === "DONE" ? "✓" : "○"}</span><span>{task.title}</span>{task.dueAt && <small>{new Date(task.dueAt).toLocaleDateString()}</small>}</button>)}</div>)}
         </article>
       </section>

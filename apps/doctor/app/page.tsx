@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { apiFetch, jsonRequest } from "../lib/request";
 import { prepareMedicalDownload } from "../lib/medical-document";
 
@@ -25,6 +25,10 @@ function initialDraft(appointment: Appointment): Draft {
   const note=appointment.consultation?.notes?.[0];
   return { ...emptyDraft, assessment:note?.assessment??"",findings:note?.findings??"",recommendations:note?.recommendations??"",summary: appointment.consultation?.summary ?? "", prescriptionInstructions: appointment.consultation?.prescription?.instructions ?? "", items: appointment.consultation?.prescription?.items.length ? appointment.consultation.prescription.items.map(item => ({ ...item })) : [{ ...emptyMedication }] };
 }
+function rebaseDraft(previous:Draft,saved:Draft,current:Draft):Draft {
+  const comparable=(value:unknown)=>JSON.stringify(value,(_key,item)=>item===null?"":typeof item==="string"?item.trim():item);
+  return Object.fromEntries((Object.keys(saved) as (keyof Draft)[]).map(key=>[key,comparable(current[key])===comparable(previous[key])?saved[key]:current[key]])) as Draft;
+}
 const patientName = (appointment: Appointment) => [appointment.patient.firstName, appointment.patient.lastName].filter(Boolean).join(" ") || "Patient";
 
 export default function DoctorPage() {
@@ -38,25 +42,33 @@ export default function DoctorPage() {
   const [busy, setBusy] = useState(false);
   const actionLock=useRef(false);
   const downloadRequest = useRef<AbortController | null>(null);
+  const appointmentLoad=useRef<AbortController|null>(null);
+  const appointmentSnapshot=useRef<Appointment[]>([]);
+  useEffect(()=>{appointmentSnapshot.current=appointments;},[appointments]);
   useEffect(() => {
     const cancel = () => { downloadRequest.current?.abort(); downloadRequest.current = null; };
     window.addEventListener("blur", cancel);
-    return () => { cancel(); window.removeEventListener("blur", cancel); };
+    return () => { cancel(); appointmentLoad.current?.abort(); window.removeEventListener("blur", cancel); };
   }, []);
   const selected = appointments.find(appointment => appointment.id === selectedId);
   const draft = selected ? drafts[selected.id] ?? initialDraft(selected) : emptyDraft;
 
-  async function load() {
+  const load=useCallback(async () => {
+    if(actionLock.current)return;
+    const previousAppointments=new Map(appointmentSnapshot.current.map(appointment=>[appointment.id,appointment]));
+    appointmentLoad.current?.abort();const controller=new AbortController();appointmentLoad.current=controller;
     setLoading(true); setError("");
     try {
-      const rows = await apiFetch<Appointment[]>("/v1/doctor/appointments");
+      const rows = await apiFetch<Appointment[]>("/v1/doctor/appointments",{signal:controller.signal});
+      if(controller.signal.aborted)return;
+      setDrafts(current=>Object.fromEntries(rows.filter(row=>current[row.id]).map(row=>{const previous=previousAppointments.get(row.id);return [row.id,previous?rebaseDraft(initialDraft(previous),initialDraft(row),current[row.id]):initialDraft(row)];})));
       setAppointments(rows);
       const requestedId=new URLSearchParams(window.location.search).get("appointmentId");
       setSelectedId(current => rows.some(row => row.id === current) ? current : requestedId&&rows.some(row=>row.id===requestedId)?requestedId:rows[0]?.id??"");
-    } catch (cause) { setError(cause instanceof Error ? cause.message : "Unable to load appointments."); }
-    finally { setLoading(false); }
-  }
-  useEffect(() => { const timer = window.setTimeout(() => void load(), 0); return () => window.clearTimeout(timer); }, []);
+    } catch (cause) { if(!controller.signal.aborted)setError(cause instanceof Error ? cause.message : "Unable to load appointments."); }
+    finally { if(!controller.signal.aborted)setLoading(false);if(appointmentLoad.current===controller)appointmentLoad.current=null; }
+  },[]);
+  useEffect(() => { const timer = window.setTimeout(() => void load(), 0); return () => window.clearTimeout(timer); }, [load]);
 
   function update(field: Exclude<keyof Draft, "items">, value: string) {
     if (selected) setDrafts(current => ({ ...current, [selected.id]: { ...draft, [field]: value } }));
@@ -104,6 +116,7 @@ export default function DoctorPage() {
     void perform(async () => {
       const prescription = await apiFetch<Prescription>(`/v1/doctor/consultations/${encodeURIComponent(selected.consultation!.id)}/prescription`, jsonRequest("PUT", { instructions: draft.prescriptionInstructions || null, items: draft.items.map(item => ({ ...item, medication: item.medication.trim() })) }));
       setAppointments(current => current.map(appointment => appointment.id === selected.id && appointment.consultation ? { ...appointment, consultation: { ...appointment.consultation, prescription } } : appointment));
+      setDrafts(current=>({...current,[selected.id]:{...draft,items:prescription.items.map(item=>({...item})),prescriptionInstructions:prescription.instructions??""}}));
     }, "Prescription saved to this consultation.");
   }
   function saveFollowUp() {
@@ -134,14 +147,16 @@ export default function DoctorPage() {
     if(!selected)return;
     void perform(async()=>{
       const record=await apiFetch<ClinicalRecord>(`/v1/doctor/appointments/${encodeURIComponent(selected.id)}/clinical-record`);
-      setAppointments(current=>current.map(appointment=>appointment.id===selected.id?{...appointment,consultation:record.consultation?{...record.consultation,notes:record.notes,prescription:record.prescription,followUps:record.followUps}:null}:appointment));
+      const refreshed={...selected,consultation:record.consultation?{...record.consultation,notes:record.notes,prescription:record.prescription,followUps:record.followUps}:null};
+      setDrafts(current=>current[selected.id]?{...current,[selected.id]:rebaseDraft(initialDraft(selected),initialDraft(refreshed),current[selected.id])}:current);
+      setAppointments(current=>current.map(appointment=>appointment.id===selected.id?refreshed:appointment));
     },"Saved clinical record refreshed. Unsaved fields remain with this appointment.");
   }
   const canWrite=selected?.consultation?.status==="IN_PROGRESS";
   const canPrescribe=selected?.consultation&&["IN_PROGRESS","COMPLETED"].includes(selected.consultation.status);
   const completed=selected?.consultation?.status==="COMPLETED";
   return <div className="shell"><header className="topbar"><div><div className="brand">CareBridge</div><div className="role">Doctor Workspace</div></div><Link href="/dashboard" style={{ color: "inherit" }}>Dashboard</Link></header>
-    <main className="content"><div className="eyebrow">Provider operations</div><h1>Today&apos;s care</h1><p className="subtitle">Review intake, run the consultation, and complete the clinical record. Save your entries before leaving this page.</p>
+    <main className="content"><div className="eyebrow">Provider operations</div><h1>Today&apos;s care</h1><p className="subtitle">Review intake, run the consultation, and complete the clinical record. Save your entries before leaving this page.</p><button disabled={busy||loading} onClick={()=>void load()}>Refresh appointment queue</button>
       {error && <div role="alert" className="note">{error} <button disabled={busy} onClick={() => void load()}>Refresh appointments</button></div>}
       {message && <p role="status" className="note">{message}</p>}
       {loading ? <p role="status">Loading appointments…</p> : !appointments.length ? <section className="card"><h2>{error ? "Appointment data unavailable" : "No appointments yet"}</h2><p>{error ? "Refresh appointments to try again." : "Booked consultations will appear here."}</p><Link href="/operations">Manage availability</Link></section> : <div className="grid"><section className="card"><h2>Appointment queue</h2><div className="queue">{appointments.map(appointment => <button key={appointment.id} disabled={busy} aria-pressed={appointment.id === selectedId} className={`queueItem ${appointment.id === selectedId ? "active" : ""}`} onClick={() => { setSelectedId(appointment.id); setMessage(""); setError(""); }}><div className="row"><span className="patient">{patientName(appointment)}</span><span className="badge">{appointment.consultation?.status ?? appointment.status}</span></div><div className="meta">{new Date(appointment.scheduledAt).toLocaleString()} · {appointment.patient.country}</div></button>)}</div></section>

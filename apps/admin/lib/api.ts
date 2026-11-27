@@ -19,7 +19,7 @@ export type AdminAppointment = { id: string; scheduledAt: string; status: string
 export type AdminSession = { id: string; createdAt: string; lastSeenAt: string; expiresAt: string; user: { email: string; role: "PATIENT" | "DOCTOR" | "ADMIN" } };
 export type AdminCareRequestStatus = "REQUESTED" | "REVIEWING" | "APPROVED" | "SCHEDULED" | "COMPLETED" | "CANCELLED";
 export type AdminCareRequest = { id: string; patientId: string; type: string; status: AdminCareRequestStatus; title: string; description: string | null; country: string | null; targetDate: string | null; createdAt: string; updatedAt: string; patient: { id: string; firstName: string | null; lastName: string | null; country: string } };
-export type AdminSupportTicket = { id: string; category: string; message: string; status: string; createdAt: string; user: { email: string; role: string } };
+export type AdminSupportTicket = { id: string; category: string; message: string; status: string; createdAt: string; updatedAt: string; priority: string; slaDueAt: string | null; escalatedAt: string | null; user: { email: string; role: string } };
 
 export function getOverview() { return apiFetch<Overview>("/v1/admin/overview"); }
 export function getDoctors() { return apiFetch<AdminDoctor[]>("/v1/admin/doctors?verified=all"); }
@@ -39,4 +39,9 @@ export function getCareRequests(status?: AdminCareRequestStatus) {
 export function updateCareRequestStatus(id: string, status: AdminCareRequestStatus, expected?: { expectedStatus: AdminCareRequestStatus; expectedUpdatedAt: string }) {
   return apiFetch<AdminCareRequest>(`/v1/admin/care-requests/${encodeURIComponent(id)}`, { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ status, ...expected }) });
 }
-export function getSupportTickets(limit = 20) { return apiFetch<AdminSupportTicket[]>(`/v1/admin/support/tickets?limit=${limit}`); }
+export function getSupportTickets(limit = 20, status?: "OPEN" | "IN_PROGRESS" | "RESOLVED" | "CLOSED") {
+  const query = new URLSearchParams({ limit: String(limit) });
+  if (status) query.set("status", status);
+  return apiFetch<AdminSupportTicket[]>(`/v1/admin/support/tickets?${query.toString()}`);
+}
+export function getCareRequest(id: string) { return apiFetch<AdminCareRequest>(`/v1/admin/care-requests/${encodeURIComponent(id)}`); }

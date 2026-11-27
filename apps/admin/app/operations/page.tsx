@@ -8,6 +8,7 @@ import {
   getAppointments,
   getActiveSessions,
   getCareRequests,
+  getCareRequest,
   getCredentials,
   getDoctors,
   getPatients,
@@ -33,6 +34,7 @@ export default function Operations() {
   const [notice, setNotice] = useState("");
   const [doctorSearch, setDoctorSearch] = useState("");
   const [busy, setBusy] = useState("");
+  const reviewingCredential = useRef(false);
   const selectedDoctorId=useRef("");
   const [credentialsLoading,setCredentialsLoading]=useState(false);
   const [requestsRefreshing, setRequestsRefreshing] = useState(false);
@@ -58,7 +60,9 @@ export default function Operations() {
       setPatients(p);
       setAppointments(a);
       setSessions(s);
-      setCareRequests(requests);
+      const requestedId = new URLSearchParams(window.location.search).get("request");
+      const requested = requestedId && !requests.some((row) => row.id === requestedId) ? await getCareRequest(requestedId) : null;
+      setCareRequests(requested ? [requested, ...requests] : requests);
       setLoaded(true);
       const requestedDoctorId = new URLSearchParams(window.location.search).get("doctor");
       const requestedDoctor = requestedDoctorId ? d.find((doctor) => doctor.id === requestedDoctorId) : undefined;
@@ -77,20 +81,27 @@ export default function Operations() {
     if (!loaded) return;
     const timer = window.setTimeout(() => {
       let sectionId="";try{sectionId=decodeURIComponent(window.location.hash.slice(1));}catch{return;}
-      if (sectionId) document.getElementById(sectionId)?.scrollIntoView({ behavior: "smooth", block: "start" });
+      const requestedId = new URLSearchParams(window.location.search).get("request");
+      const target = requestedId ? document.getElementById("care-request-" + requestedId) : null;
+      (target ?? (sectionId ? document.getElementById(sectionId) : null))?.scrollIntoView({ behavior: "smooth", block: "start" });
     }, 80);
     return () => window.clearTimeout(timer);
   }, [loaded]);
 
 
   async function review(id: string, status: "APPROVED" | "REJECTED" | "PENDING") {
-    if (!selected) return;
+    let committed = false;
+    if (!selected || reviewingCredential.current) return;
+    reviewingCredential.current = true;
     setBusy(id);
     setError("");
     setNotice("");
     const doctorId = selected.id;
     try {
-      await reviewCredential(id, status);
+      const confirmed = await reviewCredential(id, status);
+      committed = true;
+      setCredentials((current) => current.map((credential) => credential.id === confirmed.id ? confirmed : credential));
+      setNotice(`Credential ${confirmed.id} saved as ${status.toLowerCase()}.`);
       const [latestDoctors, latestCredentials] = await Promise.all([getDoctors(), getCredentials(doctorId)]);
       if(selectedDoctorId.current!==doctorId)return;
       const latestSelected = latestDoctors.find((doctor) => doctor.id === doctorId) ?? null;
@@ -105,9 +116,10 @@ export default function Operations() {
             ? "Credential approved and all submitted credentials are approved. The doctor can now appear in patient search."
             : "Credential approved. Other submitted credentials still need approval before this doctor appears in patient search.");
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Credential review failed.");
+      setError((committed ? "Credential saved. Latest provider details could not be refreshed. " : "") + (e instanceof Error ? e.message : "Credential review failed.") + (committed ? " Use Refresh credentials to confirm the latest state." : ""));
     } finally {
       setBusy("");
+      reviewingCredential.current = false;
     }
   }
 
@@ -124,6 +136,19 @@ export default function Operations() {
       refreshingRequests.current = false;
       setRequestsRefreshing(false);
     }
+  }
+
+  async function refreshCredentials() {
+    if (!selected || reviewingCredential.current) return;
+    const doctorId = selected.id;
+    setCredentialsLoading(true); setError("");
+    try {
+      const [latestDoctors, latestCredentials] = await Promise.all([getDoctors(), getCredentials(doctorId)]);
+      if (selectedDoctorId.current !== doctorId) return;
+      setDoctors(latestDoctors); setCredentials(latestCredentials);
+      setSelected(latestDoctors.find((doctor) => doctor.id === doctorId) ?? null);
+    } catch (cause) { setError(cause instanceof Error ? cause.message : "Unable to refresh provider details."); }
+    finally { if (selectedDoctorId.current === doctorId) setCredentialsLoading(false); }
   }
 
   function requestSavingChanged(requestId: string, saving: boolean) {
@@ -165,7 +190,7 @@ export default function Operations() {
             ))}
             {selected && (
               <div style={{ marginTop: 18, padding: 18, borderRadius: 16, background: "#f8fafc" }}>
-                <h3>{selected.name} credentials</h3>
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:12,flexWrap:"wrap"}}><h3>{selected.name} credentials</h3><button disabled={Boolean(busy) || credentialsLoading} onClick={() => void refreshCredentials()}>Refresh credentials</button></div>
                 <p style={{ color: "#64748b", fontSize: 13 }}>Approve only after independently checking the license with the issuing authority. The onboarding form stores license details and a reference; it does not upload the actual license document.</p>
                 {credentialsLoading?<p role="status">Loading credentials…</p>:credentials.length === 0 ? <p>No credentials submitted by this doctor yet.</p> : credentials.map((credential) => (
                   <div key={credential.id} style={{ padding: "12px 0", borderTop: "1px solid #e2e8f0" }}>
@@ -174,10 +199,10 @@ export default function Operations() {
                     {credential.documentName && <div style={{ fontSize: 13, color: "#64748b", marginTop: 4 }}>Document reference: {credential.documentName}</div>}
                     <div style={{ fontSize: 12, color: "#64748b", marginTop: 4 }}>Submitted: {new Date(credential.createdAt).toLocaleString()}{credential.reviewedAt ? " · Reviewed: " + new Date(credential.reviewedAt).toLocaleString() : ""}</div>
                     {credential.status === "PENDING" && <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 10 }}>
-                      <button disabled={busy === credential.id} onClick={() => void review(credential.id, "APPROVED")} style={{ padding: "9px 12px", border: 0, borderRadius: 10, background: "#1672b8", color: "white", fontWeight: 800 }}>{busy === credential.id ? "Saving…" : "Approve license"}</button>
-                      <button disabled={busy === credential.id} onClick={() => void review(credential.id, "REJECTED")} style={{ padding: "9px 12px", border: "1px solid #e3b8b8", borderRadius: 10, background: "#fff7f7", color: "#a12c2c", fontWeight: 800 }}>Reject license</button>
+                      <button disabled={Boolean(busy)} onClick={() => void review(credential.id, "APPROVED")} style={{ padding: "9px 12px", border: 0, borderRadius: 10, background: "#1672b8", color: "white", fontWeight: 800 }}>{busy === credential.id ? "Saving…" : "Approve license"}</button>
+                      <button disabled={Boolean(busy)} onClick={() => void review(credential.id, "REJECTED")} style={{ padding: "9px 12px", border: "1px solid #e3b8b8", borderRadius: 10, background: "#fff7f7", color: "#a12c2c", fontWeight: 800 }}>Reject license</button>
                     </div>}
-                    {credential.status === "REJECTED" && <button disabled={busy === credential.id} onClick={() => void review(credential.id, "PENDING")} style={{ marginTop: 10, padding: "9px 12px", border: "1px solid #cbd5e1", borderRadius: 10, background: "white", fontWeight: 700 }}>Return to review</button>}
+                    {credential.status === "REJECTED" && <button disabled={Boolean(busy)} onClick={() => void review(credential.id, "PENDING")} style={{ marginTop: 10, padding: "9px 12px", border: "1px solid #cbd5e1", borderRadius: 10, background: "white", fontWeight: 700 }}>Return to review</button>}
                   </div>
                 ))}
               </div>

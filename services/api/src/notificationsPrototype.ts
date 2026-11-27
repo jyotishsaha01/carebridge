@@ -44,9 +44,12 @@ export async function createNotification(input:{userId:string;role:NotificationR
 
 export async function notifyUsersByRole(role: NotificationRole, type: NotificationType, title: string, body: string) {
   const users = await prisma.user.findMany({ where: { role }, select: { id: true } });
+  const failures: unknown[] = [];
   for (const user of users) {
-    await createNotification({ userId: user.id, role, type, title, body });
+    try { await createNotification({ userId: user.id, role, type, title, body }); }
+    catch (error) { failures.push(error); }
   }
+  if (failures.length) throw new AggregateError(failures, "Some role notifications could not be delivered");
 }
 
 export async function listNotifications(userId:string,limit=100){
