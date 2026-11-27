@@ -6,12 +6,13 @@ import { prisma } from "./server";
 export async function registerPatientDashboardRoutes(app: FastifyInstance) {
   app.get("/v1/patient/dashboard", async (request, reply) => {
     const user = await getAuthenticatedUser(request);
-    if (!user?.patient) return reply.code(401).send({ error: "Patient authentication required" });
+    if (!user?.patient || user.role !== "PATIENT") return reply.code(401).send({ error: "Patient authentication required" });
 
     const patientId = user.patient.id;
-    const [appointments, documents, consultations] = await Promise.all([
+    const upcomingWhere = { patientId, status: "BOOKED", scheduledAt: { gte: new Date() } };
+    const [appointments, documents, consultations, appointmentCount, documentCount, consultationCount] = await Promise.all([
       prisma.appointment.findMany({
-        where: { patientId, status: "BOOKED", scheduledAt: { gte: new Date() } },
+        where: upcomingWhere,
         include: { doctor: { select: { id: true, name: true, slug: true, specialty: { select: { name: true } } } } },
         orderBy: { scheduledAt: "asc" },
         take: 10,
@@ -28,10 +29,16 @@ export async function registerPatientDashboardRoutes(app: FastifyInstance) {
         orderBy: { createdAt: "desc" },
         take: 10,
       }),
+      prisma.appointment.count({ where: upcomingWhere }),
+      prisma.medicalDocument.count({ where: { patientId } }),
+      prisma.consultation.count({ where: { patientId } }),
     ]);
 
     return {
       patient: { id: patientId, firstName: user.patient.firstName, lastName: user.patient.lastName, country: user.patient.country },
+      appointmentCount,
+      documentCount,
+      consultationCount,
       appointments: appointments.map((item) => ({
         id: item.id,
         scheduledAt: item.scheduledAt,
@@ -53,9 +60,21 @@ export async function registerPatientDashboardRoutes(app: FastifyInstance) {
     };
   });
 
+  app.get("/v1/patient/appointments", async (request, reply) => {
+    const user = await getAuthenticatedUser(request);
+    if (!user?.patient || user.role !== "PATIENT") return reply.code(401).send({ error: "Patient authentication required" });
+    const query = z.object({ view: z.enum(["upcoming", "all"]).default("all"), status: z.enum(["BOOKED", "COMPLETED", "CANCELLED"]).optional(), limit: z.coerce.number().int().min(1).max(100).default(20), offset: z.coerce.number().int().min(0).max(1_000_000).default(0) }).parse(request.query);
+    const where = { patientId: user.patient.id, ...(query.view === "upcoming" ? { status: "BOOKED", scheduledAt: { gte: new Date() } } : query.status ? { status: query.status } : {}) };
+    const [appointments, total] = await Promise.all([
+      prisma.appointment.findMany({ where, select: { id: true, scheduledAt: true, durationMin: true, status: true, doctor: { select: { id: true, name: true, slug: true, specialty: { select: { name: true } } } }, consultation: { select: { id: true, status: true } } }, orderBy: [{ scheduledAt: query.view === "upcoming" ? "asc" : "desc" }, { id: "asc" }], take: query.limit, skip: query.offset }),
+      prisma.appointment.count({ where }),
+    ]);
+    return { appointments, total, limit: query.limit, offset: query.offset };
+  });
+
   app.get("/v1/patient/appointments/:id", async (request, reply) => {
     const user = await getAuthenticatedUser(request);
-    if (!user?.patient) return reply.code(401).send({ error: "Patient authentication required" });
+    if (!user?.patient || user.role !== "PATIENT") return reply.code(401).send({ error: "Patient authentication required" });
     const { id } = z.object({ id: z.string().min(1) }).parse(request.params);
     const appointment = await prisma.appointment.findFirst({
       where: { id, patientId: user.patient.id },

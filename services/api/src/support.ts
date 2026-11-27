@@ -8,6 +8,7 @@ import { recordAudit } from "./audit";
 import { createNotification, notifyUsersByRole, type NotificationRole } from "./notificationsPrototype";
 import { MAX_DOCUMENT_BYTES, documentStorage } from "./storage";
 import { scanUploadedFile } from "./malwareScanner";
+import type { Prisma } from "@prisma/client";
 
 const ticketInput = z.object({
   category: z.string().trim().min(2).max(80),
@@ -15,6 +16,29 @@ const ticketInput = z.object({
 });
 
 const priorityInput = z.enum(["LOW", "NORMAL", "HIGH"]);
+const supportOwner = { select: { id: true, email: true, role: true } } as const;
+class SupportStateError extends Error {
+  constructor(public readonly statusCode: 403 | 404 | 409, message: string) { super(message); }
+}
+class SupportRetryError extends Error {}
+async function supportWrite<T>(reply: FastifyReply, operation: (tx: Prisma.TransactionClient) => Promise<T>): Promise<T | undefined> {
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try { return await prisma.$transaction(operation); }
+    catch (error) {
+      if (error instanceof SupportStateError) { reply.code(error.statusCode).send({ error: error.message }); return; }
+      if (!(error instanceof SupportRetryError) && (error as { code?: string }).code !== "P2034") throw error;
+      if (attempt === 2) { reply.code(409).send({ error: "This support request changed while saving. Refresh and try again." }); return; }
+    }
+  }
+}
+async function supportNotification(request: FastifyRequest, actorUserId: string, ticketId: string, deliver: () => Promise<unknown>) {
+  try { await deliver(); }
+  catch {
+    request.log.warn({ resourceType: "SupportTicket", resourceId: ticketId }, "Support change committed; notification delivery failed");
+    try { await recordAudit(request, { actorUserId, action: "SUPPORT_NOTIFICATION_FAILED", resourceType: "SupportTicket", resourceId: ticketId, outcome: "FAILURE" }); }
+    catch { request.log.warn({ resourceType: "SupportTicket" }, "Support notification failure audit unavailable"); }
+  }
+}
 function slaDueAt(priority: "LOW" | "NORMAL" | "HIGH", from = new Date()) {
   const hours = priority === "HIGH" ? 4 : priority === "LOW" ? 72 : 24;
   return new Date(from.getTime() + hours * 60 * 60 * 1000);
@@ -40,11 +64,18 @@ export async function registerSupportRoutes(app: FastifyInstance) {
     const user = await requireUser(request, reply);
     if (!user) return;
     const input = ticketInput.parse(request.body);
-    const createdAt = new Date();
-    const ticket = await prisma.supportTicket.create({ data: { userId: user.id, ...input, priority: "NORMAL", slaDueAt: slaDueAt("NORMAL", createdAt) } });
-    await recordAudit(request, { actorUserId: user.id, action: "SUPPORT_TICKET_CREATED", resourceType: "SupportTicket", resourceId: ticket.id, outcome: "SUCCESS" });
-    await notifyUsersByRole("ADMIN", "SUPPORT", "New support request", "A user submitted a support request that needs review.");
-    return reply.code(201).send(ticket);
+    const saved = await supportWrite(reply, async (tx) => {
+      // Serialize retries for the submitting account before the duplicate check.
+      await tx.user.update({ where: { id: user.id }, data: { updatedAt: new Date() } });
+      const duplicate = await tx.supportTicket.findFirst({ where: { userId: user.id, ...input, createdAt: { gte: new Date(Date.now() - 30_000) } }, orderBy: { createdAt: "desc" } });
+      if (duplicate) return { ticket: duplicate, created: false };
+      const ticket = await tx.supportTicket.create({ data: { userId: user.id, ...input, priority: "NORMAL", slaDueAt: slaDueAt("NORMAL") } });
+      await recordAudit(request, { actorUserId: user.id, action: "SUPPORT_TICKET_CREATED", resourceType: "SupportTicket", resourceId: ticket.id, outcome: "SUCCESS" }, tx);
+      return { ticket, created: true };
+    });
+    if (!saved) return;
+    if (saved.created) await supportNotification(request, user.id, saved.ticket.id, () => notifyUsersByRole("ADMIN", "SUPPORT", "New support request", "A user submitted a support request that needs review."));
+    return reply.code(saved.created ? 201 : 200).send(saved.ticket);
   });
 
   app.get("/v1/support/tickets/:ticketId/messages", async (request, reply) => {
@@ -54,12 +85,13 @@ export async function registerSupportRoutes(app: FastifyInstance) {
     const ticket = await prisma.supportTicket.findUnique({ where: { id: ticketId }, select: { id: true, userId: true } });
     if (!ticket) return reply.code(404).send({ error: "Support ticket not found" });
     if (ticket.userId !== user.id && user.role !== "ADMIN") return reply.code(403).send({ error: "You cannot access this support conversation" });
-    return prisma.supportMessage.findMany({
+    const messages = await prisma.supportMessage.findMany({
       where: { ticketId },
       include: { author: { select: { id: true, role: true } } },
-      orderBy: { createdAt: "asc" },
+      orderBy: [{ createdAt: "desc" }, { id: "desc" }],
       take: 200,
     });
+    return messages.reverse();
   });
 
   app.post("/v1/support/tickets/:ticketId/messages", async (request, reply) => {
@@ -67,24 +99,26 @@ export async function registerSupportRoutes(app: FastifyInstance) {
     if (!user) return;
     const { ticketId } = z.object({ ticketId: z.string().min(1) }).parse(request.params);
     const input = z.object({ message: z.string().trim().min(1).max(5000) }).parse(request.body);
-    const ticket = await prisma.supportTicket.findUnique({ where: { id: ticketId } });
-    if (!ticket) return reply.code(404).send({ error: "Support ticket not found" });
-    if (ticket.userId !== user.id && user.role !== "ADMIN") return reply.code(403).send({ error: "You cannot reply to this support conversation" });
-    const message = await prisma.supportMessage.create({
-      data: { ticketId, userId: user.id, message: input.message },
-      include: { author: { select: { id: true, role: true } } },
+    const saved = await supportWrite(reply, async (tx) => {
+      const ticket = await tx.supportTicket.findUnique({ where: { id: ticketId } });
+      if (!ticket) throw new SupportStateError(404, "Support ticket not found");
+      if (ticket.userId !== user.id && user.role !== "ADMIN") throw new SupportStateError(403, "You cannot reply to this support conversation");
+      const locked = await tx.supportTicket.updateMany({ where: { id: ticketId, updatedAt: ticket.updatedAt }, data: { updatedAt: new Date(Math.max(Date.now(), ticket.updatedAt.getTime() + 1)) } });
+      if (locked.count !== 1) throw new SupportRetryError();
+      const duplicate = await tx.supportMessage.findFirst({ where: { ticketId, userId: user.id, message: input.message, createdAt: { gte: new Date(Date.now() - 30_000) } }, include: { author: { select: { id: true, role: true } } }, orderBy: { createdAt: "desc" } });
+      if (duplicate) return { ticket, message: duplicate, created: false };
+      const message = await tx.supportMessage.create({ data: { ticketId, userId: user.id, message: input.message }, include: { author: { select: { id: true, role: true } } } });
+      await recordAudit(request, { actorUserId: user.id, action: user.role === "ADMIN" ? "ADMIN_SUPPORT_MESSAGE_SENT" : "SUPPORT_MESSAGE_SENT", resourceType: "SupportTicket", resourceId: ticketId, outcome: "SUCCESS" }, tx);
+      return { ticket, message, created: true };
     });
-    await prisma.supportTicket.update({ where: { id: ticketId }, data: { updatedAt: new Date() } });
-    await recordAudit(request, { actorUserId: user.id, action: user.role === "ADMIN" ? "ADMIN_SUPPORT_MESSAGE_SENT" : "SUPPORT_MESSAGE_SENT", resourceType: "SupportTicket", resourceId: ticketId, outcome: "SUCCESS" });
-    if (user.role === "ADMIN") {
-      const owner = await prisma.user.findUnique({ where: { id: ticket.userId }, select: { id: true, role: true } });
-      if (owner && ["PATIENT", "DOCTOR", "ADMIN"].includes(owner.role)) {
-        await createNotification({ userId: owner.id, role: owner.role as NotificationRole, type: "SUPPORT", title: "Support team replied", body: "The support team replied to your request." });
-      }
-    } else {
-      await notifyUsersByRole("ADMIN", "SUPPORT", "Support request updated", "A user added a message to a support conversation.");
-    }
-    return reply.code(201).send(message);
+    if (!saved) return;
+    if (saved.created) await supportNotification(request, user.id, ticketId, async () => {
+      if (user.role === "ADMIN") {
+        const owner = await prisma.user.findUnique({ where: { id: saved.ticket.userId }, select: { id: true, role: true } });
+        if (owner && ["PATIENT", "DOCTOR", "ADMIN"].includes(owner.role)) await createNotification({ userId: owner.id, role: owner.role as NotificationRole, type: "SUPPORT", title: "Support team replied", body: "The support team replied to your request." });
+      } else await notifyUsersByRole("ADMIN", "SUPPORT", "Support request updated", "A user added a message to a support conversation.");
+    });
+    return reply.code(saved.created ? 201 : 200).send(saved.message);
   });
 
 
@@ -99,12 +133,13 @@ export async function registerSupportRoutes(app: FastifyInstance) {
     if (ticket.userId !== user.id && user.role !== "ADMIN") {
       return reply.code(403).send({ error: "You cannot access attachments for this support ticket" });
     }
-    return prisma.supportAttachment.findMany({
+    const attachments = await prisma.supportAttachment.findMany({
       where: { ticketId },
       select: { id: true, ticketId: true, uploadedBy: true, fileName: true, contentType: true, sizeBytes: true, createdAt: true },
-      orderBy: { createdAt: "asc" },
+      orderBy: [{ createdAt: "desc" }, { id: "desc" }],
       take: 50,
     });
+    return attachments.reverse();
   });
 
   app.post("/v1/support/tickets/:ticketId/attachments", async (request, reply) => {
@@ -227,37 +262,44 @@ export async function registerSupportRoutes(app: FastifyInstance) {
       status: z.enum(["OPEN", "IN_PROGRESS", "RESOLVED", "CLOSED"]).optional(),
       priority: priorityInput.optional(),
       escalated: z.boolean().optional(),
+      expectedUpdatedAt: z.string().datetime({ offset: true }).transform((value) => new Date(value)).optional(),
     }).refine((value) => value.status !== undefined || value.priority !== undefined || value.escalated !== undefined, { message: "At least one field must be provided" }).parse(request.body);
-    const existing = await prisma.supportTicket.findUnique({ where: { id: ticketId } });
-    if (!existing) return reply.code(404).send({ error: "Support ticket not found" });
-    const now = new Date();
-    const nextPriority = input.priority ?? (existing.priority as "LOW" | "NORMAL" | "HIGH");
-    const ticket = await prisma.supportTicket.update({
-      where: { id: ticketId },
-      data: {
-        ...(input.status ? { status: input.status, resolvedAt: ["RESOLVED", "CLOSED"].includes(input.status) ? now : null } : {}),
-        ...(input.priority ? { priority: input.priority, slaDueAt: slaDueAt(nextPriority, now) } : {}),
-        ...(input.escalated !== undefined ? { escalatedAt: input.escalated ? (existing.escalatedAt ?? now) : null } : {}),
-      },
+    const saved = await supportWrite(reply, async (tx) => {
+      const existing = await tx.supportTicket.findUnique({ where: { id: ticketId }, include: { user: supportOwner } });
+      if (!existing) throw new SupportStateError(404, "Support ticket not found");
+      if (input.expectedUpdatedAt && input.expectedUpdatedAt.getTime() !== existing.updatedAt.getTime()) throw new SupportStateError(409, "This support request changed while you were editing. Refresh and try again.");
+      const statusChanged = input.status !== undefined && input.status !== existing.status;
+      const priorityChanged = input.priority !== undefined && input.priority !== existing.priority;
+      const escalationChanged = input.escalated !== undefined && input.escalated !== Boolean(existing.escalatedAt);
+      if (!statusChanged && !priorityChanged && !escalationChanged) return { ticket: existing, statusChanged: false, escalated: false };
+      const now = new Date(Math.max(Date.now(), existing.updatedAt.getTime() + 1));
+      const changed = await tx.supportTicket.updateMany({ where: { id: ticketId, updatedAt: existing.updatedAt }, data: {
+        ...(statusChanged ? { status: input.status, resolvedAt: ["RESOLVED", "CLOSED"].includes(input.status!) ? now : null } : {}),
+        ...(priorityChanged ? { priority: input.priority, slaDueAt: slaDueAt(input.priority!, now) } : {}),
+        ...(escalationChanged ? { escalatedAt: input.escalated ? now : null } : {}),
+        updatedAt: now,
+      } });
+      if (changed.count !== 1) throw new SupportStateError(409, "This support request changed while you were editing. Refresh and try again.");
+      const ticket = await tx.supportTicket.findUnique({ where: { id: ticketId }, include: { user: supportOwner } });
+      if (!ticket) throw new SupportStateError(404, "Support ticket not found");
+      await recordAudit(request, { actorUserId: user.id, action: "ADMIN_SUPPORT_TICKET_UPDATED", resourceType: "SupportTicket", resourceId: ticket.id, outcome: "SUCCESS", metadata: { previousStatus: existing.status, status: ticket.status, previousPriority: existing.priority, priority: ticket.priority, escalated: Boolean(ticket.escalatedAt) } }, tx);
+      return { ticket, statusChanged, escalated: escalationChanged && input.escalated === true };
     });
-    await recordAudit(request, { actorUserId: user.id, action: "ADMIN_SUPPORT_TICKET_UPDATED", resourceType: "SupportTicket", resourceId: ticket.id, outcome: "SUCCESS", metadata: { status: input.status, priority: input.priority, escalated: input.escalated } });
-    if (input.escalated === true && !existing.escalatedAt) {
-      await notifyUsersByRole("ADMIN", "SUPPORT", "Support ticket escalated", "A support ticket was escalated and requires priority review.");
-      const owner = await prisma.user.findUnique({ where: { id: existing.userId }, select: { id: true, role: true } });
-      if (owner && ["PATIENT", "DOCTOR", "ADMIN"].includes(owner.role)) {
-        await createNotification({ userId: owner.id, role: owner.role as NotificationRole, type: "SUPPORT", title: "Support request escalated", body: "Your support request has been escalated for additional review." });
-      }
+    if (!saved) return;
+    if (saved.escalated) {
+      await supportNotification(request, user.id, ticketId, () => notifyUsersByRole("ADMIN", "SUPPORT", "Support ticket escalated", "A support ticket was escalated and requires priority review."));
+      if (["PATIENT", "DOCTOR", "ADMIN"].includes(saved.ticket.user.role)) await supportNotification(request, user.id, ticketId, () => createNotification({ userId: saved.ticket.userId, role: saved.ticket.user.role as NotificationRole, type: "SUPPORT", title: "Support request escalated", body: "Your support request has been escalated for additional review." }));
     }
-    const ticketOwner = await prisma.user.findUnique({ where: { id: ticket.userId }, select: { role: true } });
-    if (ticketOwner && ["PATIENT", "DOCTOR", "ADMIN"].includes(ticketOwner.role) && input.status) {
-      await createNotification({
-        userId: ticket.userId,
-        role: ticketOwner.role as NotificationRole,
-        type: "SUPPORT",
-        title: "Support request updated",
-        body: "Your support request status is now " + input.status + ".",
-      });
-    }
+    if (saved.statusChanged && ["PATIENT", "DOCTOR", "ADMIN"].includes(saved.ticket.user.role)) await supportNotification(request, user.id, ticketId, () => createNotification({ userId: saved.ticket.userId, role: saved.ticket.user.role as NotificationRole, type: "SUPPORT", title: "Support request updated", body: "Your support request status is now " + saved.ticket.status + "." }));
+    return saved.ticket;
+  });
+
+  app.get("/v1/admin/support/tickets/:ticketId", async (request, reply) => {
+    const user = await requireRole(request, reply, ["ADMIN"]);
+    if (!user) return;
+    const { ticketId } = z.object({ ticketId: z.string().min(1) }).parse(request.params);
+    const ticket = await prisma.supportTicket.findUnique({ where: { id: ticketId }, include: { user: supportOwner } });
+    if (!ticket) return reply.code(404).send({ error: "Support ticket not found" });
     return ticket;
   });
 }

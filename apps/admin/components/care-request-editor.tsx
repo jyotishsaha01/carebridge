@@ -47,7 +47,7 @@ export default function CareRequestEditor({ request, onSaved, disabled = false, 
     }
   }
 
-  return <article className={styles.request} aria-label={`Care request ${request.id}`}>
+  return <article id={`care-request-${request.id}`} className={styles.request} aria-label={`Care request ${request.id}`}>
     <div className={styles.details}>
       <h3>{request.title}</h3>
       <p>{request.type.replaceAll("_", " ")} · {patientName} · {request.patient.country}</p>

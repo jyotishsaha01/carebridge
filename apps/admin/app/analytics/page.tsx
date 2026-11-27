@@ -43,7 +43,12 @@ function CommandCenter() {
       ]);
       if (signal?.aborted || version !== loadVersion.current) return;
       if (overviewVersion === metricVersion.current) setMetrics(overview);
-      setRequests(groups.flat().sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt)));
+      const byId = new Map<string, AdminCareRequest>();
+      for (const row of groups.flat()) {
+        const previous = byId.get(row.id);
+        if (!previous || Date.parse(row.updatedAt) >= Date.parse(previous.updatedAt)) byId.set(row.id, row);
+      }
+      setRequests([...byId.values()].sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt)));
     } catch (cause) {
       if (!signal?.aborted && version === loadVersion.current) setError(cause instanceof Error ? cause.message : "Unable to load analytics.");
     } finally {

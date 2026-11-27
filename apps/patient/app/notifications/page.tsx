@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { ApiError, API_URL, apiFetch } from "../../lib/api";
 import styles from "./notifications.module.css";
 import { captureSessionScope } from "../../lib/session-binding";
@@ -31,8 +31,18 @@ export default function NotificationsPage() {
   const [loading, setLoading] = useState(true);
   const [pending, setPending] = useState<string | null>(null);
   const [signInRequired, setSignInRequired] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+  const [notice, setNotice] = useState("");
+  const lifetime = useRef<AbortController | null>(null);
+  const activeLoad = useRef<AbortController | null>(null);
+  const mutation = useRef<string | null>(null);
 
-  const load = useCallback(async (signal?: AbortSignal) => {
+  const load = useCallback(async (requestSignal?: AbortSignal, afterMutation = false) => {
+    if ((mutation.current !== null && !afterMutation) || !lifetime.current || lifetime.current.signal.aborted) return false;
+    activeLoad.current?.abort();
+    const controller = new AbortController(); activeLoad.current = controller;
+    const signal = AbortSignal.any([controller.signal, lifetime.current.signal, ...(requestSignal ? [requestSignal] : [])]);
+    setRefreshing(true);
     try {
       const data = await apiFetch<{ notifications: Notification[]; unreadCount: number }>("/v1/notifications?limit=100", { signal });
       if (signal?.aborted) return false;
@@ -41,34 +51,41 @@ export default function NotificationsPage() {
     } catch (cause) {
       if (!signal?.aborted) { setError(cause instanceof Error ? cause.message : "Unable to load notifications."); setSignInRequired(cause instanceof ApiError && cause.status === 401 && !captureSessionScope().userId); }
       return false;
-    } finally { if (!signal?.aborted) setLoading(false); }
+    } finally { if (!signal.aborted) { setLoading(false); setRefreshing(false); } }
   }, []);
 
   useEffect(() => {
-    const controller = new AbortController();
-    let stream: EventSource | null = null;
-    // State updates in load occur after the network request settles.
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    void load(controller.signal).then((ok) => {
-      if (!ok || controller.signal.aborted) return;
-      stream = new EventSource(`${API_URL}/v1/notifications/stream`, { withCredentials: true });
-      stream.addEventListener("notification", () => void load(controller.signal));
-    });
-    return () => { controller.abort(); stream?.close(); };
+    const controller = new AbortController(); lifetime.current = controller;
+    const refresh = () => { if (document.visibilityState === "visible") void load(controller.signal); };
+    const stream = new EventSource(`${API_URL}/v1/notifications/stream`, { withCredentials: true });
+    stream.addEventListener("notification", refresh); stream.addEventListener("ready", refresh);
+    const timer = window.setTimeout(refresh, 0);
+    window.addEventListener("focus", refresh);
+    return () => { window.clearTimeout(timer); controller.abort(); activeLoad.current?.abort(); stream.close(); window.removeEventListener("focus", refresh); };
   }, [load]);
 
   async function mark(id: string) {
-    setPending(id);
-    try { await apiFetch(`/v1/notifications/${encodeURIComponent(id)}/read`, { method: "POST" }); await load(); }
-    catch (cause) { setError(cause instanceof Error ? cause.message : "Unable to mark this notification as read."); }
-    finally { setPending(null); }
+    if (mutation.current !== null) return;
+    mutation.current = id; setPending(id); setNotice(""); activeLoad.current?.abort();
+    try {
+      await apiFetch(`/v1/notifications/${encodeURIComponent(id)}/read`, { method: "POST" });
+      if (items.some(item => item.id === id && item.status === "UNREAD")) setUnread(current => Math.max(0, current - 1));
+      setItems(current => current.map(item => item.id === id ? { ...item, status: "READ" } : item));
+      setNotice("Notification marked as read.");
+      await load(undefined, true);
+    } catch (cause) { setError(cause instanceof Error ? cause.message : "Unable to mark this notification as read."); }
+    finally { mutation.current = null; setPending(null); setRefreshing(false); }
   }
 
   async function markAll() {
-    setPending("all");
-    try { await apiFetch("/v1/notifications/read-all", { method: "POST" }); await load(); }
-    catch (cause) { setError(cause instanceof Error ? cause.message : "Unable to mark notifications as read."); }
-    finally { setPending(null); }
+    if (mutation.current !== null) return;
+    mutation.current = "all"; setPending("all"); setNotice(""); activeLoad.current?.abort();
+    try {
+      await apiFetch("/v1/notifications/read-all", { method: "POST" });
+      setItems(current => current.map(item => ({ ...item, status: "READ" }))); setUnread(0);
+      setNotice("All notifications marked as read."); await load(undefined, true);
+    } catch (cause) { setError(cause instanceof Error ? cause.message : "Unable to mark notifications as read."); }
+    finally { mutation.current = null; setPending(null); setRefreshing(false); }
   }
 
   return (
@@ -89,18 +106,19 @@ export default function NotificationsPage() {
             <button
               className={styles.actionBtn}
               onClick={markAll}
-              disabled={!unread || pending !== null || loading}
+              disabled={!unread || pending !== null || loading || refreshing}
             >
               Mark all read
             </button>
-            <button className={styles.actionBtn} onClick={() => void load()} disabled={loading || pending !== null}>Refresh</button>
+            <button className={styles.actionBtn} onClick={() => void load()} disabled={refreshing || pending !== null}>{refreshing ? "Refreshing…" : "Refresh"}</button>
             <a className={styles.actionLink} href="/dashboard">
               Dashboard
             </a>
           </div>
         </header>
 
-        {error && <div className={styles.empty} role="alert">{error} {signInRequired ? <Link href="/login">Sign in</Link> : <button className={styles.actionBtn} onClick={() => void load()}>Try again</button>}</div>}
+        {notice && <p role="status" className={styles.empty}>{notice}</p>}
+        {error && <div className={styles.empty} role="alert">{error} {signInRequired ? <Link href="/login">Sign in</Link> : <button className={styles.actionBtn} onClick={() => void load()} disabled={refreshing || pending !== null}>Try again</button>}</div>}
         {loading ? <p className={styles.empty} role="status">Loading notifications…</p> : (
           <section className={styles.list} aria-label="Your notifications">
             {items.length === 0 && !error ? (
@@ -129,7 +147,7 @@ export default function NotificationsPage() {
                     {isUnread && (
                       <button
                         className={styles.read}
-                        disabled={pending !== null}
+                        disabled={pending !== null || refreshing}
                         onClick={() => mark(item.id)}
                       >
                         Mark read

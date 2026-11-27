@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { createHmac, randomUUID } from "node:crypto";
 import { exerciseCareRequests } from "./uatCareRequests";
+import { exerciseFeatureConsistency } from "./uatFeatureConsistency";
 const API_URL = process.env.API_URL ?? "http://127.0.0.1:4000";
 const DEMO_PASSWORD = process.env.CAREBRIDGE_UAT_PASSWORD;
 if (!DEMO_PASSWORD) throw new Error("CAREBRIDGE_UAT_PASSWORD is required");
@@ -404,6 +405,7 @@ async function main() {
   r = await request("/v1/admin/appointments?limit=20", {}, adminCookie);
   assert.ok(r.body.some((a: any) => a.id === appointmentId));
   await exercisePayments(appointmentId, patientCookie);
+  await exerciseFeatureConsistency({ patient: patientCookie, secondPatient: secondPatientCookie, doctor: doctorCookie, admin: adminCookie });
   console.log("CAREBRIDGE UAT PASS: care requests, clinical, support, document, notification and payment journeys with cross-patient isolation");
 }
 main().catch((error) => { console.error("CAREBRIDGE UAT FAIL"); console.error(error); process.exit(1); });

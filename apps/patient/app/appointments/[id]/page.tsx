@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import { apiFetch, getAvailability } from "../../../lib/api";
 
@@ -29,21 +29,27 @@ export default function AppointmentPage() {
   const [actionError, setActionError] = useState("");
   const [actionMessage, setActionMessage] = useState("");
   const [cancelReason, setCancelReason] = useState("");
+  const [refreshing, setRefreshing] = useState(false);
+  const [slotsError, setSlotsError] = useState("");
+  const [reloadSlots, setReloadSlots] = useState(0);
+  const lifetime = useRef<AbortController | null>(null);
+  const activeLoad = useRef<AbortController | null>(null);
+  const action = useRef(false);
 
-  useEffect(() => {
-    let active = true;
-    const controller = new AbortController();
-    async function load() {
-      try {
-        const appointment = await apiFetch<Appointment>(`/v1/patient/appointments/${encodeURIComponent(id)}`, { signal: controller.signal });
-        if (active) setData(appointment);
-      } catch (cause) {
-        if (active) setError(cause instanceof Error ? cause.message : "This appointment could not be loaded.");
-      }
-    }
-    if (id) void load();
-    return () => { active = false; controller.abort(); };
+  const load = useCallback(async () => {
+    if (!id || action.current || !lifetime.current || lifetime.current.signal.aborted) return;
+    activeLoad.current?.abort(); const controller = new AbortController(); activeLoad.current = controller;
+    const signal = AbortSignal.any([controller.signal, lifetime.current.signal]); setRefreshing(true);
+    try { const appointment = await apiFetch<Appointment>(`/v1/patient/appointments/${encodeURIComponent(id)}`, { signal }); if (!signal.aborted) { setData(appointment); setError(""); } }
+    catch (cause) { if (!signal.aborted) setError(cause instanceof Error ? cause.message : "This appointment could not be loaded."); }
+    finally { if (!signal.aborted) setRefreshing(false); }
   }, [id]);
+  useEffect(() => {
+    const controller = new AbortController(); lifetime.current = controller;
+    const refresh = () => { if (document.visibilityState === "visible") void load(); };
+    const timer = window.setTimeout(refresh, 0); window.addEventListener("focus", refresh);
+    return () => { window.clearTimeout(timer); controller.abort(); activeLoad.current?.abort(); window.removeEventListener("focus", refresh); };
+  }, [load]);
 
   useEffect(() => {
     let active = true;
@@ -62,7 +68,7 @@ export default function AppointmentPage() {
       }
 
       setSlotsLoading(true);
-      setActionError("");
+      setSlotsError("");
       const from = new Date();
       const to = new Date(Date.now() + 60 * 24 * 60 * 60 * 1000);
       void getAvailability(data.doctor.slug, from, to)
@@ -77,7 +83,7 @@ export default function AppointmentPage() {
           setSelectedSlot((current) => usable.some((slot) => slot.startsAt === current) ? current : (usable[0]?.startsAt ?? ""));
         })
         .catch((cause) => {
-          if (active) setActionError(cause instanceof Error ? cause.message : "Unable to load available times.");
+          if (active) setSlotsError(cause instanceof Error ? cause.message : "Unable to load available times.");
         })
         .finally(() => {
           if (active) setSlotsLoading(false);
@@ -88,21 +94,23 @@ export default function AppointmentPage() {
       active = false;
       window.clearTimeout(timer);
     };
-  }, [data]);
+  }, [data, reloadSlots]);
 
   async function cancelAppointment() {
-    if (!data || actionPending) return;
+    if (!data || action.current || refreshing) return;
+    action.current = true;
     setActionPending(true);
     setActionError("");
     setActionMessage("");
     try {
-      await apiFetch(`/v1/patient/appointments/${encodeURIComponent(data.id)}/cancel`, {
+      const saved = await apiFetch<{ scheduledAt: string; status: string }>(`/v1/patient/appointments/${encodeURIComponent(data.id)}/cancel`, {
         method: "POST", headers: { "content-type": "application/json" },
         body: JSON.stringify({ reason: cancelReason.trim() || undefined }),
       });
       setData((current) => current ? {
         ...current,
-        status: "CANCELLED",
+        status: saved.status,
+        scheduledAt: saved.scheduledAt,
         consultation: current.consultation?.status === "SCHEDULED"
           ? { ...current.consultation, status: "CANCELLED" }
           : current.consultation,
@@ -112,16 +120,18 @@ export default function AppointmentPage() {
     } catch (cause) {
       setActionError(cause instanceof Error ? cause.message : "Unable to cancel this appointment.");
     } finally {
+      action.current = false;
       setActionPending(false);
     }
   }
 
   async function rescheduleAppointment() {
-    if (!data || actionPending) return;
+    if (!data || action.current || refreshing) return;
     if (!selectedSlot) {
       setActionError("Choose an available time before rescheduling.");
       return;
     }
+    action.current = true;
     setActionPending(true);
     setActionError("");
     setActionMessage("");
@@ -139,11 +149,12 @@ export default function AppointmentPage() {
     } catch (cause) {
       setActionError(cause instanceof Error ? cause.message : "Unable to reschedule this appointment.");
     } finally {
+      action.current = false;
       setActionPending(false);
     }
   }
 
-  if (error) return <main style={{ maxWidth: 850, margin: "auto", padding: 48, fontFamily: "system-ui" }}><p role="alert">{error}</p><Link href="/dashboard">← Dashboard</Link></main>;
+  if (error && !data) return <main style={{ maxWidth: 850, margin: "auto", padding: 48, fontFamily: "system-ui" }}><p role="alert">{error}</p><button disabled={refreshing} onClick={() => void load()}>Retry appointment</button><Link href="/dashboard">← Dashboard</Link></main>;
   if (!data) return <main style={{ maxWidth: 850, margin: "auto", padding: 48, fontFamily: "system-ui" }} role="status">Loading appointment…</main>;
 
   const consultation = data.consultation;
@@ -152,7 +163,8 @@ export default function AppointmentPage() {
 
   return (
     <main style={{ maxWidth: 950, margin: "auto", padding: "48px 24px", fontFamily: "Inter,system-ui,sans-serif", color: "#172334" }}>
-      <Link href="/dashboard" style={{ color: "#1672b8" }}>← Dashboard</Link>
+      <Link href="/appointments?view=all" style={{ color: "#1672b8" }}>← All appointments</Link> <button disabled={refreshing || actionPending} onClick={() => void load()}>{refreshing ? "Refreshing…" : "Refresh appointment"}</button>
+      {error && <p role="alert" style={{color:"#9a3412"}}>{error} Displayed details may be out of date.</p>}
       <div style={{ marginTop: 24 }}>
         <p style={{ fontSize: 12, fontWeight: 800, letterSpacing: ".12em", color: "#64748b" }}>CAREBRIDGE · APPOINTMENT</p>
         <h1>{data.doctor.name}</h1>
@@ -169,23 +181,24 @@ export default function AppointmentPage() {
           <div style={{ display: "grid", gap: 12, maxWidth: 560 }}>
             <label style={{ display: "grid", gap: 8, fontWeight: 700 }}>
               Choose another time
-              <select value={selectedSlot} disabled={actionPending || slotsLoading || availableSlots.length === 0} onChange={(event) => setSelectedSlot(event.target.value)} style={{ minHeight: 44, border: "1px solid #cbd5e1", borderRadius: 10, padding: "9px 12px", background: "white" }}>
-                <option value="">{slotsLoading ? "Loading available times…" : availableSlots.length ? "Select an available time" : "No available times found"}</option>
+              <select value={selectedSlot} disabled={actionPending || refreshing || slotsLoading || availableSlots.length === 0} onChange={(event) => { setSelectedSlot(event.target.value); setActionMessage(""); }} style={{ minHeight: 44, border: "1px solid #cbd5e1", borderRadius: 10, padding: "9px 12px", background: "white" }}>
+                <option value="">{slotsLoading ? "Loading available times…" : slotsError ? "Available times could not be loaded" : availableSlots.length ? "Select an available time" : "No available times found"}</option>
                 {availableSlots.map((slot) => <option key={slot.id} value={slot.startsAt}>{new Date(slot.startsAt).toLocaleString()} ({slot.timezone ?? "UTC"})</option>)}
               </select>
             </label>
             <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-              <button type="button" disabled={actionPending || slotsLoading || !selectedSlot} onClick={rescheduleAppointment} style={{ padding: "12px 16px", borderRadius: 12, border: 0, background: "#1672b8", color: "white", fontWeight: 800, cursor: actionPending || slotsLoading || !selectedSlot ? "not-allowed" : "pointer", opacity: actionPending || slotsLoading || !selectedSlot ? 0.6 : 1 }}>
+              <button type="button" disabled={actionPending || refreshing || slotsLoading || !selectedSlot} onClick={rescheduleAppointment} style={{ padding: "12px 16px", borderRadius: 12, border: 0, background: "#1672b8", color: "white", fontWeight: 800, cursor: actionPending || slotsLoading || !selectedSlot ? "not-allowed" : "pointer", opacity: actionPending || slotsLoading || !selectedSlot ? 0.6 : 1 }}>
                 {actionPending ? "Updating…" : "Reschedule appointment"}
               </button>
             </div>
             <label style={{ display: "grid", gap: 8, fontWeight: 700 }}>
               Cancellation reason (optional)
-              <textarea maxLength={1000} rows={2} value={cancelReason} onChange={(event) => setCancelReason(event.target.value)} disabled={actionPending} placeholder="Tell the care team why you are cancelling" style={{ border: "1px solid #cbd5e1", borderRadius: 10, padding: 12, resize: "vertical" }} />
+              <textarea maxLength={1000} rows={2} value={cancelReason} onChange={(event) => { setCancelReason(event.target.value); setActionMessage(""); }} disabled={actionPending || refreshing} placeholder="Tell the care team why you are cancelling" style={{ border: "1px solid #cbd5e1", borderRadius: 10, padding: 12, resize: "vertical" }} />
             </label>
-            <button type="button" disabled={actionPending} onClick={cancelAppointment} style={{ alignSelf: "flex-start", padding: "12px 16px", borderRadius: 12, border: "1px solid #fecaca", background: "white", color: "#b91c1c", fontWeight: 800, cursor: actionPending ? "not-allowed" : "pointer", opacity: actionPending ? 0.6 : 1 }}>
+            <button type="button" disabled={actionPending || refreshing} onClick={cancelAppointment} style={{ alignSelf: "flex-start", padding: "12px 16px", borderRadius: 12, border: "1px solid #fecaca", background: "white", color: "#b91c1c", fontWeight: 800, cursor: actionPending ? "not-allowed" : "pointer", opacity: actionPending ? 0.6 : 1 }}>
               {actionPending ? "Updating…" : "Cancel appointment"}
             </button>
+            {slotsError && <p role="alert" style={{ color: "#9a3412" }}>{slotsError} <button disabled={actionPending || slotsLoading} onClick={() => setReloadSlots(current => current + 1)}>Retry available times</button></p>}
             {slotsLoading && <p role="status" style={{ color: "#64748b", margin: 0 }}>Loading available times…</p>}
           </div>
         </section>

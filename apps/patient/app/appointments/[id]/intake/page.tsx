@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { apiFetch } from "../../../../lib/api";
 const fields = [
@@ -36,6 +36,9 @@ export default function IntakePage() {
   const [loadError, setLoadError] = useState("");
   const [message, setMessage] = useState("");
   const [messageKind, setMessageKind] = useState<"success" | "error">("success");
+  const [reload, setReload] = useState(0);
+  const [dirty, setDirty] = useState(false);
+  const pending = useRef(false);
 
   useEffect(() => {
     let active = true;
@@ -54,10 +57,11 @@ export default function IntakePage() {
     }
     if (id) void load();
     return () => { active = false; controller.abort(); };
-  }, [id]);
+  }, [id, reload]);
 
   async function save() {
-    if (saving || loadError) return;
+    if (pending.current || loadError) return;
+    pending.current = true;
     setSaving(true);
     setMessage("");
     setMessageKind("success");
@@ -74,7 +78,8 @@ export default function IntakePage() {
       });
       setData(saved);
       setConsent(Boolean(saved.consentToConsult));
-      setMessage(consent ? "Questionnaire submitted successfully." : "Draft saved successfully. You can return to finish it later.");
+      setDirty(false);
+      setMessage(saved.consentToConsult && saved.status === "COMPLETED" ? "Questionnaire submitted successfully." : "Draft saved successfully. You can return to finish it later.");
       setMessageKind("success");
     } catch (cause) {
       const timedOut = cause instanceof DOMException && cause.name === "AbortError";
@@ -83,6 +88,7 @@ export default function IntakePage() {
         : cause instanceof Error ? cause.message : "The questionnaire could not be saved. Your answers remain on this page.");
       setMessageKind("error");
     } finally {
+      pending.current = false;
       setSaving(false);
     }
   }
@@ -102,25 +108,26 @@ export default function IntakePage() {
       <p style={{ marginTop: 28, fontSize: 12, fontWeight: 800, letterSpacing: ".12em", color: "#64748b" }}>CAREBRIDGE · MEDICAL INTAKE</p>
       <h1>Prepare for your consultation.</h1>
       <p style={{ color: "#64748b", fontSize: 17, lineHeight: 1.6 }}>This is the standard medical intake for this appointment. Your draft stays private until you submit consent. Submitted answers are shared with the authorized care team for this appointment. Only provide information relevant to your care.</p>
-      {loadError && <div role="alert" style={{ margin: "18px 0", padding: 14, borderRadius: 14, background: "#fff1f0", color: "#9f3029" }}>{loadError}</div>}
+      {loadError && <div role="alert" style={{ margin: "18px 0", padding: 14, borderRadius: 14, background: "#fff1f0", color: "#9f3029" }}>{loadError} <button onClick={() => { setLoadError(""); setLoading(true); setReload(current => current + 1); }}>Retry questionnaire</button></div>}
       {message && <div role={messageKind === "error" ? "alert" : "status"} style={{ margin: "18px 0", padding: 14, borderRadius: 14, background: messageKind === "error" ? "#fff1f0" : "#ecfdf5", color: messageKind === "error" ? "#9f3029" : "#166534" }}>{message}</div>}
+      {dirty && <p style={{ color: "#9a5b11" }}>Unsaved questionnaire changes</p>}
       <section style={{ marginTop: 24, padding: 26, border: "1px solid #e2e8f0", borderRadius: 24 }}>
         {fields.map(([key, label, help]) => (
-          <label key={key} style={{ display: "grid", gap: 7, fontWeight: 700, marginBottom: 18 }}>
-            {label}
-            <span style={{ fontSize: 13, fontWeight: 400, color: "#64748b" }}>{help}</span>
-            <textarea
+          <div key={key} style={{ display: "grid", gap: 7, fontWeight: 700, marginBottom: 18 }}>
+            <label htmlFor={`intake-${key}`}>{label}</label>
+            <span id={`intake-${key}-help`} style={{ fontSize: 13, fontWeight: 400, color: "#64748b" }}>{help}</span>
+            <textarea id={`intake-${key}`} aria-describedby={`intake-${key}-help`}
               rows={key === "reasonForVisit" ? 3 : 4}
               maxLength={key === "reasonForVisit" ? 2000 : key === "symptoms" || key === "medicalHistory" ? 5000 : 3000}
               value={data[key] ?? ""}
               disabled={Boolean(loadError) || saving}
-              onChange={(event) => setData((current) => ({ ...current, [key]: event.target.value }))}
+              onChange={(event) => { setData((current) => ({ ...current, [key]: event.target.value })); setDirty(true); setMessage(""); }}
               style={{ padding: 13, border: "1px solid #cbd5e1", borderRadius: 12, resize: "vertical" }}
             />
-          </label>
+          </div>
         ))}
         <label style={{ display: "flex", gap: 10, alignItems: "flex-start", padding: 16, borderRadius: 14, background: "#f8fafc" }}>
-          <input type="checkbox" checked={consent} disabled={Boolean(loadError) || saving} onChange={(event) => setConsent(event.target.checked)} />
+          <input type="checkbox" checked={consent} disabled={Boolean(loadError) || saving} onChange={(event) => { setConsent(event.target.checked); setDirty(true); setMessage(""); }} />
           <span><b>I consent to this consultation</b><small style={{ display: "block", color: "#64748b", marginTop: 4 }}>I confirm that the information provided is intended to help the CareBridge specialist prepare for my consultation.</small></span>
         </label>
         <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginTop: 20 }}>

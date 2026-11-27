@@ -21,6 +21,7 @@ function MetricDetails() {
   const [loading, setLoading] = useState(true);
   const [cutoff, setCutoff] = useState(0);
   const loadVersion = useRef(0);
+  const invalidateLoads = useCallback(() => { loadVersion.current++; }, []);
 
   const load = useCallback(async (signal?: AbortSignal) => {
     const version = ++loadVersion.current;
@@ -43,8 +44,8 @@ function MetricDetails() {
   useEffect(() => {
     const controller = new AbortController();
     const timer = window.setTimeout(() => void load(controller.signal), 0);
-    return () => { window.clearTimeout(timer); controller.abort(); loadVersion.current++; };
-  }, [load]);
+    return () => { window.clearTimeout(timer); controller.abort(); invalidateLoads(); };
+  }, [load, invalidateLoads]);
 
   const completedOnly = view === "completed" || view === "completion-rate";
   const consultations = appointments.filter((appointment) => appointment.consultation && (!completedOnly || appointment.consultation.status === "COMPLETED"));
